@@ -29,6 +29,11 @@ import AdminPanel from './AdminPanel';
 // CONSTANTS
 // ============================================
 
+// Admin user IDs - only these users can see the Admin button
+const ADMIN_UIDS = [
+  '4usiVxPmHLhmitEKH2HfCpbx4Yi1'
+];
+
 const ITEMS_PER_PAGE = 15;
 const STARTING_CASH = 1000;
 const DAILY_BONUS = 300;
@@ -2034,7 +2039,7 @@ export default function App() {
                 className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
                 🏆 Leaderboard
               </button>
-              {user && (
+              {user && ADMIN_UIDS.includes(user.uid) && (
                 <button onClick={() => setShowAdmin(true)}
                   className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
                   🔧 Admin
