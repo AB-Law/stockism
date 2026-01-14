@@ -22,7 +22,7 @@ import {
   arrayUnion
 } from 'firebase/firestore';
 import { auth, googleProvider, db } from './firebase';
-import { CHARACTERS, CHARACTER_MAP, ETFS, ETF_MAP, ALL_ASSETS } from './characters';
+import { CHARACTERS, CHARACTER_MAP } from './characters';
 
 // ============================================
 // CONSTANTS
@@ -1004,14 +1004,6 @@ export default function App() {
           initialPrices[c.ticker] = c.basePrice;
           initialHistory[c.ticker] = [{ timestamp: Date.now(), price: c.basePrice }];
         });
-        // Add ETFs
-        ETFS.forEach(e => {
-          if (e.isStandalone) {
-            initialPrices[e.ticker] = e.basePrice;
-            initialHistory[e.ticker] = [{ timestamp: Date.now(), price: e.basePrice }];
-          }
-          // Component ETFs derive price from components, no need to store
-        });
         
         setDoc(marketRef, {
           prices: initialPrices,
@@ -1075,20 +1067,13 @@ export default function App() {
     }
 
     const price = prices[ticker];
-    const asset = ALL_ASSETS[ticker] || CHARACTER_MAP[ticker];
+    const asset = CHARACTER_MAP[ticker];
     const basePrice = asset?.basePrice || price;
     const userRef = doc(db, 'users', user.uid);
     const marketRef = doc(db, 'market', 'current');
 
-    // Handle ETF component pricing for Daniel Pack
-    let etfPrice = price;
-    if (asset?.isETF && asset?.components) {
-      etfPrice = asset.components.reduce((sum, t) => sum + (prices[t] || 0), 0);
-    }
-    const effectivePrice = asset?.components ? etfPrice : price;
-
     if (action === 'buy') {
-      const totalCost = effectivePrice * amount;
+      const totalCost = price * amount;
       
       if (userData.cash < totalCost) {
         setNotification({ type: 'error', message: 'Insufficient funds!' });
@@ -1098,24 +1083,12 @@ export default function App() {
 
       // Calculate new price with diminishing returns
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = effectivePrice * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const newPrice = Math.min(basePrice * (1 + MAX_PRICE_DEVIATION), price + priceImpact);
       
-      // For ETF with components, update component prices
-      if (asset?.components) {
-        for (const compTicker of asset.components) {
-          const compPrice = prices[compTicker];
-          const compBase = CHARACTER_MAP[compTicker]?.basePrice || compPrice;
-          const newCompPrice = Math.min(compBase * (1 + MAX_PRICE_DEVIATION), compPrice + priceImpact / asset.components.length);
-          await updateDoc(marketRef, {
-            [`prices.${compTicker}`]: Math.round(newCompPrice * 100) / 100
-          });
-        }
-      } else {
-        const newPrice = Math.min(basePrice * (1 + MAX_PRICE_DEVIATION), price + priceImpact);
-        await updateDoc(marketRef, {
-          [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
-        });
-      }
+      await updateDoc(marketRef, {
+        [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
+      });
 
       // Update user
       await updateDoc(userRef, {
@@ -1137,29 +1110,14 @@ export default function App() {
 
       // Calculate price drop FIRST, then sell at the NEW lower price
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = effectivePrice * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      
-      let sellPrice = effectivePrice;
-      
-      if (asset?.components) {
-        for (const compTicker of asset.components) {
-          const compPrice = prices[compTicker];
-          const compBase = CHARACTER_MAP[compTicker]?.basePrice || compPrice;
-          const newCompPrice = Math.max(compBase * (1 - MAX_PRICE_DEVIATION), compPrice - priceImpact / asset.components.length);
-          await updateDoc(marketRef, {
-            [`prices.${compTicker}`]: Math.round(newCompPrice * 100) / 100
-          });
-        }
-        sellPrice = (etfPrice + (etfPrice - priceImpact)) / 2;
-      } else {
-        const newPrice = Math.max(basePrice * (1 - MAX_PRICE_DEVIATION), price - priceImpact);
-        sellPrice = (price + newPrice) / 2;
-        await updateDoc(marketRef, {
-          [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
-        });
-      }
-      
+      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const newPrice = Math.max(basePrice * (1 - MAX_PRICE_DEVIATION), price - priceImpact);
+      const sellPrice = (price + newPrice) / 2;
       const totalRevenue = sellPrice * amount;
+
+      await updateDoc(marketRef, {
+        [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
+      });
 
       // Update user
       await updateDoc(userRef, {
@@ -1173,7 +1131,7 @@ export default function App() {
     
     } else if (action === 'short') {
       // SHORTING: Borrow shares and sell them, hoping to buy back cheaper
-      const marginRequired = effectivePrice * amount * SHORT_MARGIN_REQUIREMENT;
+      const marginRequired = price * amount * SHORT_MARGIN_REQUIREMENT;
       
       if (userData.cash < marginRequired) {
         setNotification({ type: 'error', message: `Need ${formatCurrency(marginRequired)} margin (50% of position)` });
@@ -1181,14 +1139,14 @@ export default function App() {
         return;
       }
 
-      const proceeds = effectivePrice * amount;
+      const proceeds = price * amount;
       const existingShort = userData.shorts?.[ticker] || { shares: 0, entryPrice: 0, margin: 0 };
       
       // Average entry price if adding to existing short
       const totalShares = existingShort.shares + amount;
       const avgEntryPrice = existingShort.shares > 0 
-        ? ((existingShort.entryPrice * existingShort.shares) + (effectivePrice * amount)) / totalShares
-        : effectivePrice;
+        ? ((existingShort.entryPrice * existingShort.shares) + (price * amount)) / totalShares
+        : price;
 
       // Update user - hold margin as collateral, get proceeds
       await updateDoc(userRef, {
@@ -1204,7 +1162,7 @@ export default function App() {
 
       // Price goes down when shorting (selling pressure)
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = effectivePrice * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
       const newPrice = Math.max(basePrice * (1 - MAX_PRICE_DEVIATION), price - priceImpact);
       
       await updateDoc(marketRef, {
@@ -1212,7 +1170,7 @@ export default function App() {
         totalTrades: increment(1)
       });
 
-      setNotification({ type: 'success', message: `Shorted ${amount} ${ticker} at ${formatCurrency(effectivePrice)}` });
+      setNotification({ type: 'success', message: `Shorted ${amount} ${ticker} at ${formatCurrency(price)}` });
     
     } else if (action === 'cover') {
       // COVER: Buy back shares to close short position
@@ -1224,8 +1182,8 @@ export default function App() {
         return;
       }
 
-      const coverCost = effectivePrice * amount;
-      const profitPerShare = existingShort.entryPrice - effectivePrice;
+      const coverCost = price * amount;
+      const profitPerShare = existingShort.entryPrice - price;
       const profit = profitPerShare * amount;
       const marginReturned = (existingShort.margin / existingShort.shares) * amount;
 
@@ -1260,7 +1218,7 @@ export default function App() {
 
       // Price goes up when covering (buying pressure)
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = effectivePrice * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
       const newPrice = Math.min(basePrice * (1 + MAX_PRICE_DEVIATION), price + priceImpact);
       
       await updateDoc(marketRef, {
