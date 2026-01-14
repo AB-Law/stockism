@@ -1150,7 +1150,14 @@ export default function App() {
     const marketRef = doc(db, 'market', 'current');
 
     if (action === 'buy') {
-      const totalCost = price * amount;
+      // Calculate new price FIRST - you buy at the HIGHER price
+      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
+      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const newPrice = Math.min(basePrice * (1 + MAX_PRICE_DEVIATION), price + priceImpact);
+      
+      // You pay the HIGHER price (after your buying pressure)
+      const buyPrice = newPrice;
+      const totalCost = buyPrice * amount;
       
       if (userData.cash < totalCost) {
         setNotification({ type: 'error', message: 'Insufficient funds!' });
@@ -1158,11 +1165,6 @@ export default function App() {
         return;
       }
 
-      // Calculate new price with diminishing returns
-      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      const newPrice = Math.min(basePrice * (1 + MAX_PRICE_DEVIATION), price + priceImpact);
-      
       await updateDoc(marketRef, {
         [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
       });
@@ -1185,11 +1187,13 @@ export default function App() {
         return;
       }
 
-      // Calculate price drop FIRST, then sell at the NEW lower price
+      // Calculate new price FIRST - you sell at the LOWER price
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
       const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
       const newPrice = Math.max(basePrice * (1 - MAX_PRICE_DEVIATION), price - priceImpact);
-      const sellPrice = (price + newPrice) / 2;
+      
+      // You get the LOWER price (after your selling pressure)
+      const sellPrice = newPrice;
       const totalRevenue = sellPrice * amount;
 
       await updateDoc(marketRef, {
@@ -1208,34 +1212,31 @@ export default function App() {
     
     } else if (action === 'short') {
       // SHORTING: Borrow shares and sell them, hoping to buy back cheaper
-      const marginRequired = price * amount * SHORT_MARGIN_REQUIREMENT;
+      // You need margin as collateral but DON'T get proceeds until you cover
+      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
+      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
+      const newPrice = Math.max(basePrice * (1 - MAX_PRICE_DEVIATION), price - priceImpact);
+      
+      // Entry price is the lower price after your selling pressure
+      const shortPrice = newPrice;
+      const marginRequired = shortPrice * amount * SHORT_MARGIN_REQUIREMENT;
       
       if (userData.cash < marginRequired) {
         setNotification({ type: 'error', message: `Need ${formatCurrency(marginRequired)} margin (50% of position)` });
         setTimeout(() => setNotification(null), 3000);
         return;
       }
-
-      // Calculate price drop FIRST (your short causes selling pressure)
-      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      const newPrice = Math.max(basePrice * (1 - MAX_PRICE_DEVIATION), price - priceImpact);
-      
-      // You get the AVERAGE price (worse for you)
-      const shortPrice = (price + newPrice) / 2;
-      const proceeds = shortPrice * amount;
       
       const existingShort = userData.shorts?.[ticker] || { shares: 0, entryPrice: 0, margin: 0 };
       
-      // Average entry price if adding to existing short
       const totalShares = existingShort.shares + amount;
       const avgEntryPrice = existingShort.shares > 0 
         ? ((existingShort.entryPrice * existingShort.shares) + (shortPrice * amount)) / totalShares
         : shortPrice;
 
-      // Update user - hold margin as collateral, get proceeds
+      // You ONLY lose the margin as collateral - no proceeds yet
       await updateDoc(userRef, {
-        cash: userData.cash - marginRequired + proceeds,
+        cash: userData.cash - marginRequired,
         [`shorts.${ticker}`]: {
           shares: totalShares,
           entryPrice: Math.round(avgEntryPrice * 100) / 100,
@@ -1262,22 +1263,24 @@ export default function App() {
         return;
       }
 
-      // Calculate price INCREASE first (your cover causes buying pressure)
+      // Calculate price INCREASE (your cover causes buying pressure)
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
       const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
       const newPrice = Math.min(basePrice * (1 + MAX_PRICE_DEVIATION), price + priceImpact);
       
-      // You pay the AVERAGE price (worse for you - higher)
-      const coverPrice = (price + newPrice) / 2;
-      const coverCost = coverPrice * amount;
+      // You pay the HIGHER price to cover
+      const coverPrice = newPrice;
       
+      // Profit/loss = entry price - cover price (per share)
       const profitPerShare = existingShort.entryPrice - coverPrice;
       const profit = profitPerShare * amount;
+      
+      // Get back margin + profit (or margin - loss)
       const marginReturned = (existingShort.margin / existingShort.shares) * amount;
-
-      // Check if user can afford to cover (might have lost money)
-      if (userData.cash + marginReturned < coverCost) {
-        setNotification({ type: 'error', message: 'Insufficient funds to cover!' });
+      const cashBack = marginReturned + profit;
+      
+      if (userData.cash + cashBack < 0) {
+        setNotification({ type: 'error', message: 'Insufficient funds to cover losses!' });
         setTimeout(() => setNotification(null), 3000);
         return;
       }
@@ -1285,9 +1288,9 @@ export default function App() {
       const remainingShares = existingShort.shares - amount;
       const remainingMargin = existingShort.margin - marginReturned;
 
-      // Update user: get margin back, pay cover cost, get original short proceeds
+      // Update user: simply add cashBack (margin + profit or margin - loss)
       const updateData = {
-        cash: userData.cash + marginReturned - coverCost + (existingShort.entryPrice * amount),
+        cash: userData.cash + cashBack,
         lastTradeTime: now
       };
 
