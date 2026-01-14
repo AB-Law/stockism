@@ -146,7 +146,7 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
     const cutoff = range.hours === Infinity ? 0 : Date.now() - (range.hours * 60 * 60 * 1000);
     
     const tickerHistory = priceHistory[character.ticker] || [];
-    return tickerHistory
+    let data = tickerHistory
       .filter(point => point.timestamp >= cutoff)
       .map(point => ({
         ...point,
@@ -155,9 +155,31 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
           month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' 
         }),
       }));
-  }, [priceHistory, character.ticker, timeRange]);
+    
+    // If not enough data, create synthetic chart from base price to current
+    if (data.length < 2) {
+      const now = Date.now();
+      const startTime = range.hours === Infinity ? now - (7 * 24 * 60 * 60 * 1000) : now - (range.hours * 60 * 60 * 1000);
+      data = [
+        { 
+          timestamp: startTime, 
+          price: character.basePrice,
+          date: new Date(startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          fullDate: new Date(startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        },
+        { 
+          timestamp: now, 
+          price: currentPrice,
+          date: 'Now',
+          fullDate: new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        }
+      ];
+    }
+    
+    return data;
+  }, [priceHistory, character.ticker, character.basePrice, currentPrice, timeRange]);
 
-  const hasData = currentData.length >= 2;
+  const hasData = currentData.length >= 2; // Will always be true now
   const prices = hasData ? currentData.map(d => d.price) : [currentPrice];
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
@@ -244,28 +266,20 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
 
         {/* Chart Area */}
         <div className={`p-4 ${bgClass}`}>
-          {!hasData ? (
-            <div className={`flex items-center justify-center h-48 ${mutedClass}`}>
-              <div className="text-center">
-                <p className="text-lg mb-2">📊 Building history...</p>
-                <p className="text-sm">Chart data appears as the market runs.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="relative">
-              <svg 
-                viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
-                className="w-full"
-                onMouseLeave={() => setHoveredPoint(null)}
-              >
-                {/* Grid lines */}
-                {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
-                  const y = paddingY + ratio * chartHeight;
-                  const price = maxPrice - ratio * priceRange;
-                  return (
-                    <g key={i}>
-                      <line x1={paddingX} y1={y} x2={svgWidth - paddingX} y2={y}
-                        stroke={darkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" />
+          <div className="relative">
+            <svg 
+              viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+              className="w-full"
+              onMouseLeave={() => setHoveredPoint(null)}
+            >
+              {/* Grid lines */}
+              {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
+                const y = paddingY + ratio * chartHeight;
+                const price = maxPrice - ratio * priceRange;
+                return (
+                  <g key={i}>
+                    <line x1={paddingX} y1={y} x2={svgWidth - paddingX} y2={y}
+                      stroke={darkMode ? '#334155' : '#e2e8f0'} strokeWidth="1" />
                       <text x={paddingX - 8} y={y + 4} textAnchor="end"
                         fill={darkMode ? '#64748b' : '#94a3b8'} fontSize="10">
                         ${price.toFixed(0)}
@@ -304,7 +318,6 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
                 </div>
               )}
             </div>
-          )}
         </div>
 
         {/* Stats Footer */}
@@ -312,15 +325,15 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
           <div className="grid grid-cols-4 gap-4 text-center">
             <div>
               <div className={`text-xs ${mutedClass} uppercase`}>Open</div>
-              <div className={`font-semibold ${textClass}`}>{hasData ? formatCurrency(firstPrice) : '—'}</div>
+              <div className={`font-semibold ${textClass}`}>{formatCurrency(firstPrice)}</div>
             </div>
             <div>
               <div className={`text-xs ${mutedClass} uppercase`}>High</div>
-              <div className="font-semibold text-green-500">{hasData ? formatCurrency(maxPrice) : '—'}</div>
+              <div className="font-semibold text-green-500">{formatCurrency(maxPrice)}</div>
             </div>
             <div>
               <div className={`text-xs ${mutedClass} uppercase`}>Low</div>
-              <div className="font-semibold text-red-500">{hasData ? formatCurrency(minPrice) : '—'}</div>
+              <div className="font-semibold text-red-500">{formatCurrency(minPrice)}</div>
             </div>
             <div>
               <div className={`text-xs ${mutedClass} uppercase`}>Current</div>
@@ -1186,8 +1199,23 @@ const CharacterCard = ({ character, price, priceChange, sentiment, holdings, sho
   const miniChartData = useMemo(() => {
     const data = priceHistory[character.ticker] || [];
     const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    return data.filter(p => p.timestamp >= cutoff);
-  }, [priceHistory, character.ticker]);
+    const filtered = data.filter(p => p.timestamp >= cutoff);
+    
+    // If we have enough data, use it
+    if (filtered.length >= 2) {
+      return filtered;
+    }
+    
+    // Otherwise, create a synthetic chart from base price to current price
+    const basePrice = character.basePrice;
+    const now = Date.now();
+    const dayAgo = now - (24 * 60 * 60 * 1000);
+    
+    return [
+      { timestamp: dayAgo, price: basePrice },
+      { timestamp: now, price: price }
+    ];
+  }, [priceHistory, character.ticker, character.basePrice, price]);
 
   // Calculate short P/L if shorted
   const shortPL = shorted ? (shortPosition.entryPrice - price) * shortPosition.shares : 0;
@@ -1212,13 +1240,7 @@ const CharacterCard = ({ character, price, priceChange, sentiment, holdings, sho
           </div>
         </div>
         <div className="mb-2">
-          {miniChartData.length >= 2 ? (
-            <SimpleLineChart data={miniChartData} darkMode={darkMode} />
-          ) : (
-            <div className={`h-10 flex items-center justify-center text-xs ${mutedClass}`}>
-              Chart building...
-            </div>
-          )}
+          <SimpleLineChart data={miniChartData} darkMode={darkMode} />
         </div>
       </div>
 
