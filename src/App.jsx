@@ -35,10 +35,10 @@ const PRICE_UPDATE_INTERVAL = 5000; // 5 seconds
 const HISTORY_RECORD_INTERVAL = 60000; // 1 minute
 
 // Economy balancing constants
-const TRADE_IMPACT_FACTOR = 0.02; // How much trades affect price (lower = more stable)
+const TRADE_IMPACT_FACTOR = 0.008; // How much trades affect price (lower = more stable)
 const PRICE_GRAVITY_FACTOR = 0.001; // How fast prices drift back to base (lower = slower)
-const MAX_PRICE_DEVIATION = 0.5; // Max 50% deviation from base price
-const DIMINISHING_RETURNS_THRESHOLD = 10; // Shares before diminishing returns kick in
+const MAX_PRICE_DEVIATION = 0.3; // Max 30% deviation from base price
+const DIMINISHING_RETURNS_THRESHOLD = 5; // Shares before diminishing returns kick in
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -986,31 +986,53 @@ export default function App() {
       return;
     }
 
+    // Trade cooldown - prevent spam trading
+    const now = Date.now();
+    const lastTrade = userData.lastTradeTime || 0;
+    const cooldownMs = 3000; // 3 second cooldown
+    
+    if (now - lastTrade < cooldownMs) {
+      const remaining = Math.ceil((cooldownMs - (now - lastTrade)) / 1000);
+      setNotification({ type: 'error', message: `Please wait ${remaining}s between trades` });
+      setTimeout(() => setNotification(null), 2000);
+      return;
+    }
+
+    // Limit trade size to prevent market manipulation
+    const maxTradeSize = 50;
+    if (amount > maxTradeSize) {
+      setNotification({ type: 'error', message: `Max ${maxTradeSize} shares per trade` });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
     const price = prices[ticker];
-    const totalCost = price * amount;
+    const basePrice = CHARACTER_MAP[ticker].basePrice;
+    const userRef = doc(db, 'users', user.uid);
+    const marketRef = doc(db, 'market', 'current');
 
     if (action === 'buy') {
+      const totalCost = price * amount;
+      
       if (userData.cash < totalCost) {
         setNotification({ type: 'error', message: 'Insufficient funds!' });
         setTimeout(() => setNotification(null), 3000);
         return;
       }
 
-      const userRef = doc(db, 'users', user.uid);
-      const marketRef = doc(db, 'market', 'current');
-
       // Calculate new price with diminishing returns
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
       const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
       const newPrice = Math.min(
-        CHARACTER_MAP[ticker].basePrice * (1 + MAX_PRICE_DEVIATION),
+        basePrice * (1 + MAX_PRICE_DEVIATION),
         price + priceImpact
       );
 
       // Update user
       await updateDoc(userRef, {
         cash: userData.cash - totalCost,
-        [`holdings.${ticker}`]: (userData.holdings[ticker] || 0) + amount
+        [`holdings.${ticker}`]: (userData.holdings[ticker] || 0) + amount,
+        lastTradeTime: now
       });
 
       // Update market price
@@ -1028,21 +1050,24 @@ export default function App() {
         return;
       }
 
-      const userRef = doc(db, 'users', user.uid);
-      const marketRef = doc(db, 'market', 'current');
-
-      // Calculate price drop with diminishing returns
+      // Calculate price drop FIRST, then sell at the NEW lower price
+      // This prevents buy-high-sell-higher exploit
       const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
       const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
       const newPrice = Math.max(
-        CHARACTER_MAP[ticker].basePrice * (1 - MAX_PRICE_DEVIATION),
+        basePrice * (1 - MAX_PRICE_DEVIATION),
         price - priceImpact
       );
+      
+      // Sell at the LOWER price (average of current and new)
+      const sellPrice = (price + newPrice) / 2;
+      const totalRevenue = sellPrice * amount;
 
       // Update user
       await updateDoc(userRef, {
-        cash: userData.cash + totalCost,
-        [`holdings.${ticker}`]: currentHoldings - amount
+        cash: userData.cash + totalRevenue,
+        [`holdings.${ticker}`]: currentHoldings - amount,
+        lastTradeTime: now
       });
 
       // Update market price
@@ -1051,7 +1076,7 @@ export default function App() {
         totalTrades: increment(1)
       });
 
-      setNotification({ type: 'success', message: `Sold ${amount} ${ticker} for ${formatCurrency(totalCost)}` });
+      setNotification({ type: 'success', message: `Sold ${amount} ${ticker} for ${formatCurrency(totalRevenue)}` });
     }
 
     setTimeout(() => setNotification(null), 3000);
@@ -1342,3 +1367,4 @@ export default function App() {
     </div>
   );
 }
+
