@@ -998,7 +998,7 @@ const AboutModal = ({ onClose, darkMode }) => {
               <div>
                 <h3 className="font-semibold text-teal-500 mb-2">Who made this?</h3>
                 <p className={mutedClass}>
-                  Stockism was created by fans for the Lookism community. 
+                  Stockism was created by <a href="https://github.com/UltiMyBeloved" target="_blank" rel="noopener noreferrer" className="text-teal-500 hover:text-teal-400 underline">UltiMyBeloved</a> for the Lookism community. 
                   It's a free, open-source project with no ads or monetization.
                 </p>
               </div>
@@ -1008,15 +1008,6 @@ const AboutModal = ({ onClose, darkMode }) => {
           {/* FAQ TAB */}
           {activeTab === 'faq' && (
             <div className={`space-y-4 ${textClass}`}>
-              <div>
-                <h3 className="font-semibold text-teal-500 mb-1">Why do I need to sign in with Google?</h3>
-                <p className={`text-sm ${mutedClass}`}>
-                  Google Sign-In lets us securely identify you without storing passwords. 
-                  We only use it to create your account — we don't access your Google data, 
-                  contacts, or anything else.
-                </p>
-              </div>
-
               <div>
                 <h3 className="font-semibold text-teal-500 mb-1">What's the "bid-ask spread"?</h3>
                 <p className={`text-sm ${mutedClass}`}>
@@ -1063,8 +1054,7 @@ const AboutModal = ({ onClose, darkMode }) => {
               <div>
                 <h3 className="font-semibold text-teal-500 mb-1">How do I report bugs or suggest features?</h3>
                 <p className={`text-sm ${mutedClass}`}>
-                  Reach out to us on the Lookism subreddit or Discord community. We're always looking 
-                  to improve!
+                  Reach out to <a href="https://reddit.com/u/SupremeExalted" target="_blank" rel="noopener noreferrer" className="text-teal-500 hover:text-teal-400 underline">u/SupremeExalted</a> on Reddit. We're always looking to improve!
                 </p>
               </div>
             </div>
@@ -1114,8 +1104,7 @@ const AboutModal = ({ onClose, darkMode }) => {
                 <h3 className="font-semibold text-teal-500 mb-2">About the Google Sign-In popup:</h3>
                 <p className={`text-sm ${mutedClass}`}>
                   When you sign in, Google shows a standard message saying we "could" access your name and 
-                  profile picture. This is Google's default OAuth screen — it shows the <em>maximum possible</em> 
-                  permissions, not what we actually use.
+                  profile picture. This is Google's default OAuth screen — it shows the <em>maximum possible</em> permissions, not what we actually use.
                 </p>
                 <p className={`text-sm ${mutedClass} mt-2`}>
                   In reality, our code immediately discards this information. We only use Google to verify 
@@ -1127,16 +1116,7 @@ const AboutModal = ({ onClose, darkMode }) => {
               <div>
                 <h3 className="font-semibold text-teal-500 mb-2">Data deletion:</h3>
                 <p className={`text-sm ${mutedClass}`}>
-                  Want your data deleted? Contact us and we'll remove your account entirely — both the 
-                  game data and the Firebase Auth record.
-                </p>
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-teal-500 mb-2">Third-party services:</h3>
-                <p className={`text-sm ${mutedClass}`}>
-                  We use Firebase (by Google) for authentication and data storage. Your data is stored securely 
-                  on Google's servers with industry-standard encryption. We don't share your data with anyone else.
+                  Want your data deleted? Contact us and we'll remove your account/data entirely.
                 </p>
               </div>
 
@@ -2391,7 +2371,7 @@ export default function App() {
           <img 
             src="/stockism logo.png" 
             alt="Stockism" 
-            className="h-[100px] sm:h-[115px] md:h-[150px] w-auto"
+            className="h-[50px] sm:h-[70px] md:h-[90px] w-auto"
           />
         </div>
 
