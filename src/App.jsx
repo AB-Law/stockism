@@ -310,6 +310,11 @@ const checkAndAwardAchievements = async (userRef, userData, prices, context = {}
     newAchievements.push('COLD_BLOODED');
   }
   
+  // Bull Run achievement (sell for 50%+ profit)
+  if (context.sellProfitPercent && context.sellProfitPercent >= 50 && !currentAchievements.includes('BULL_RUN')) {
+    newAchievements.push('BULL_RUN');
+  }
+  
   // Update peak portfolio value
   const peakPortfolioValue = Math.max(userData.peakPortfolioValue || 0, portfolioValue);
   
@@ -2197,18 +2202,48 @@ export default function App() {
             const userShare = userBet.amount / winningPool;
             const payout = userShare * totalPool;
             
-            // Update user's cash and mark bet as paid
+            // Calculate new prediction wins count
+            const newPredictionWins = (userData.predictionWins || 0) + 1;
+            
+            // Check for Oracle/Prophet achievements
+            const currentAchievements = userData.achievements || [];
+            const newAchievements = [];
+            
+            if (newPredictionWins >= 3 && !currentAchievements.includes('ORACLE')) {
+              newAchievements.push('ORACLE');
+            }
+            if (newPredictionWins >= 10 && !currentAchievements.includes('PROPHET')) {
+              newAchievements.push('PROPHET');
+            }
+            
+            // Update user's cash, mark bet as paid, increment wins
             const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
+            const updateData = {
               cash: userData.cash + payout,
               [`bets.${prediction.id}.paid`]: true,
-              [`bets.${prediction.id}.payout`]: payout
-            });
+              [`bets.${prediction.id}.payout`]: payout,
+              predictionWins: newPredictionWins
+            };
             
-            setNotification({ 
-              type: 'success', 
-              message: `🎉 Prediction payout: +${formatCurrency(payout)}!` 
-            });
+            if (newAchievements.length > 0) {
+              updateData.achievements = arrayUnion(...newAchievements);
+            }
+            
+            await updateDoc(userRef, updateData);
+            
+            // Show achievement notification if earned, otherwise payout notification
+            if (newAchievements.length > 0) {
+              const achievement = ACHIEVEMENTS[newAchievements[0]];
+              setNotification({ 
+                type: 'achievement', 
+                message: `🏆 ${achievement.emoji} ${achievement.name} unlocked! +${formatCurrency(payout)} payout!` 
+              });
+            } else {
+              setNotification({ 
+                type: 'success', 
+                message: `🎉 Prediction payout: +${formatCurrency(payout)}!` 
+              });
+            }
             setTimeout(() => setNotification(null), 5000);
           }
         } else {
@@ -2461,10 +2496,19 @@ export default function App() {
       // Record price history
       await recordPriceHistory(ticker, settledPrice);
 
-      // Update user with trade count
+      // Calculate new cost basis (weighted average)
+      const currentHoldings = userData.holdings[ticker] || 0;
+      const currentCostBasis = userData.costBasis?.[ticker] || 0;
+      const newHoldings = currentHoldings + amount;
+      const newCostBasis = currentHoldings > 0
+        ? ((currentCostBasis * currentHoldings) + (buyPrice * amount)) / newHoldings
+        : buyPrice;
+
+      // Update user with trade count and cost basis
       await updateDoc(userRef, {
         cash: userData.cash - totalCost,
-        [`holdings.${ticker}`]: (userData.holdings[ticker] || 0) + amount,
+        [`holdings.${ticker}`]: newHoldings,
+        [`costBasis.${ticker}`]: Math.round(newCostBasis * 100) / 100,
         lastTradeTime: now,
         totalTrades: increment(1)
       });
@@ -2524,10 +2568,19 @@ export default function App() {
       // Record price history
       await recordPriceHistory(ticker, settledPrice);
 
+      // Calculate profit percentage for Bull Run achievement
+      const costBasis = userData.costBasis?.[ticker] || 0;
+      const profitPercent = costBasis > 0 ? ((sellPrice - costBasis) / costBasis) * 100 : 0;
+      
+      // Update cost basis if selling all shares, otherwise keep it
+      const newHoldings = currentHoldings - amount;
+      const costBasisUpdate = newHoldings <= 0 ? 0 : userData.costBasis?.[ticker] || 0;
+
       // Update user with trade count
       await updateDoc(userRef, {
         cash: userData.cash + totalRevenue,
-        [`holdings.${ticker}`]: currentHoldings - amount,
+        [`holdings.${ticker}`]: newHoldings,
+        [`costBasis.${ticker}`]: costBasisUpdate,
         lastTradeTime: now,
         totalTrades: increment(1)
       });
@@ -2539,13 +2592,13 @@ export default function App() {
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * (t === ticker ? shares - amount : shares), 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
       
-      // Check achievements
+      // Check achievements (pass profit percent for Bull Run)
       const earnedAchievements = await checkAndAwardAchievements(userRef, {
         ...userData,
         cash: userData.cash + totalRevenue,
-        holdings: { ...userData.holdings, [ticker]: currentHoldings - amount },
+        holdings: { ...userData.holdings, [ticker]: newHoldings },
         totalTrades: (userData.totalTrades || 0) + 1
-      }, prices, { tradeValue: totalRevenue });
+      }, prices, { tradeValue: totalRevenue, sellProfitPercent: profitPercent });
       
       const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
       
@@ -2762,6 +2815,72 @@ export default function App() {
       updateDoc(userRef, { portfolioHistory: updatedHistory });
     }
   }, [user, userData, prices]);
+
+  // Check leaderboard position for achievements (runs every 30 seconds)
+  useEffect(() => {
+    if (!user || !userData) return;
+    
+    const checkLeaderboardAchievements = async () => {
+      try {
+        const currentAchievements = userData.achievements || [];
+        
+        // Skip if already has all leaderboard achievements
+        if (currentAchievements.includes('TOP_1')) return;
+        
+        // Fetch top 10 to check position
+        const q = query(
+          collection(db, 'users'),
+          orderBy('portfolioValue', 'desc'),
+          limit(10)
+        );
+        const snapshot = await getDocs(q);
+        const topUsers = snapshot.docs.map(doc => doc.id);
+        
+        const userPosition = topUsers.indexOf(user.uid);
+        
+        if (userPosition === -1) return; // Not in top 10
+        
+        const newAchievements = [];
+        const rank = userPosition + 1;
+        
+        // Check for leaderboard achievements
+        if (rank <= 10 && !currentAchievements.includes('TOP_10')) {
+          newAchievements.push('TOP_10');
+        }
+        if (rank <= 3 && !currentAchievements.includes('TOP_3')) {
+          newAchievements.push('TOP_3');
+        }
+        if (rank === 1 && !currentAchievements.includes('TOP_1')) {
+          newAchievements.push('TOP_1');
+        }
+        
+        if (newAchievements.length > 0) {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            achievements: arrayUnion(...newAchievements)
+          });
+          
+          // Show notification for highest achievement earned
+          const highestAchievement = newAchievements.includes('TOP_1') ? 'TOP_1' 
+            : newAchievements.includes('TOP_3') ? 'TOP_3' : 'TOP_10';
+          const achievement = ACHIEVEMENTS[highestAchievement];
+          setNotification({ 
+            type: 'achievement', 
+            message: `🏆 ${achievement.emoji} ${achievement.name} unlocked! You're #${rank} on the leaderboard!` 
+          });
+          setTimeout(() => setNotification(null), 5000);
+        }
+      } catch (err) {
+        console.error('Failed to check leaderboard achievements:', err);
+      }
+    };
+    
+    // Check immediately and then every 30 seconds
+    checkLeaderboardAchievements();
+    const interval = setInterval(checkLeaderboardAchievements, 30000);
+    
+    return () => clearInterval(interval);
+  }, [user, userData?.achievements]);
 
   // Daily checkin
   const handleDailyCheckin = useCallback(async () => {
