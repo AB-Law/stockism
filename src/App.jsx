@@ -40,14 +40,47 @@ const DAILY_BONUS = 300;
 const PRICE_UPDATE_INTERVAL = 5000; // 5 seconds
 const HISTORY_RECORD_INTERVAL = 60000; // 1 minute
 
-// Economy balancing constants
-const TRADE_IMPACT_FACTOR = 0.008; // How much trades affect price (lower = more stable)
-const DIMINISHING_RETURNS_THRESHOLD = 5; // Shares before diminishing returns kick in
+// Economy balancing constants - Realistic Market Model
+const BASE_IMPACT = 0.005; // 0.5% base impact per sqrt(share)
+const BASE_LIQUIDITY = 100; // Base liquidity pool (higher = harder to move price)
+const BID_ASK_SPREAD = 0.002; // 0.2% spread between buy/sell prices
+const MIN_PRICE = 0.01; // Minimum price floor
 
 // Shorting constants (realistic NYSE-style)
 const SHORT_MARGIN_REQUIREMENT = 0.5; // 50% margin required (can short up to 2x cash)
 const SHORT_INTEREST_RATE = 0.001; // 0.1% daily interest on short positions
 const SHORT_MARGIN_CALL_THRESHOLD = 0.25; // Auto-close if equity drops below 25%
+
+// ============================================
+// MARKET MECHANICS HELPERS
+// ============================================
+
+// Calculate price impact using square root model (used by real quant funds)
+// This models real market microstructure where impact scales with sqrt of order size
+const calculatePriceImpact = (currentPrice, shares, liquidity = BASE_LIQUIDITY) => {
+  // Square root model: impact = price * base_impact * sqrt(shares / liquidity)
+  // This means: 4x the shares = 2x the impact (not 4x)
+  const impact = currentPrice * BASE_IMPACT * Math.sqrt(shares / liquidity);
+  return impact;
+};
+
+// Get effective liquidity for a character (can be customized per character later)
+const getCharacterLiquidity = (ticker, tradingVolume = 0) => {
+  // Base liquidity + bonus from trading volume
+  // More actively traded = more liquid = harder to move
+  const volumeBonus = Math.sqrt(tradingVolume) * 0.5;
+  return BASE_LIQUIDITY + volumeBonus;
+};
+
+// Calculate bid (sell) and ask (buy) prices with spread
+const getBidAskPrices = (midPrice) => {
+  const halfSpread = midPrice * BID_ASK_SPREAD / 2;
+  return {
+    bid: midPrice - halfSpread,  // Price you get when selling
+    ask: midPrice + halfSpread,  // Price you pay when buying
+    spread: halfSpread * 2
+  };
+};
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -1551,13 +1584,14 @@ export default function App() {
           // Clear the short position
           updateData[`shorts.${liq.ticker}`] = { shares: 0, entryPrice: 0, margin: 0 };
           
-          // Price impact from forced cover (buying pressure)
-          const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / liq.shares);
-          const priceImpact = liq.currentPrice * TRADE_IMPACT_FACTOR * liq.shares * impactMultiplier;
-          const newPrice = liq.currentPrice + priceImpact; // No cap
+          // Price impact from forced cover (buying pressure) using square root model
+          const liquidity = getCharacterLiquidity(liq.ticker);
+          const priceImpact = calculatePriceImpact(liq.currentPrice, liq.shares, liquidity);
+          const newPrice = liq.currentPrice + priceImpact;
           
           await updateDoc(marketRef, {
-            [`prices.${liq.ticker}`]: Math.round(newPrice * 100) / 100
+            [`prices.${liq.ticker}`]: Math.round(newPrice * 100) / 100,
+            [`volume.${liq.ticker}`]: increment(liq.shares)
           });
         }
         
@@ -1708,13 +1742,16 @@ export default function App() {
     const marketRef = doc(db, 'market', 'current');
 
     if (action === 'buy') {
-      // Calculate new price FIRST - you buy at the HIGHER price
-      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      const newPrice = price + priceImpact; // No cap - prices can go as high as demand pushes them
+      // Get liquidity for this character
+      const liquidity = getCharacterLiquidity(ticker);
       
-      // You pay the HIGHER price (after your buying pressure)
-      const buyPrice = newPrice;
+      // Calculate price impact using square root model
+      const priceImpact = calculatePriceImpact(price, amount, liquidity);
+      const newMidPrice = price + priceImpact;
+      
+      // You pay the ASK price (mid + half spread) - this is realistic market friction
+      const { ask } = getBidAskPrices(newMidPrice);
+      const buyPrice = ask;
       const totalCost = buyPrice * amount;
       
       if (userData.cash < totalCost) {
@@ -1723,12 +1760,16 @@ export default function App() {
         return;
       }
 
+      // Market settles at new mid price (not ask)
+      const settledPrice = Math.round(newMidPrice * 100) / 100;
+      
       await updateDoc(marketRef, {
-        [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
+        [`prices.${ticker}`]: settledPrice,
+        [`volume.${ticker}`]: increment(amount) // Track trading volume
       });
 
       // Record price history
-      await recordPriceHistory(ticker, Math.round(newPrice * 100) / 100);
+      await recordPriceHistory(ticker, settledPrice);
 
       // Update user
       await updateDoc(userRef, {
@@ -1744,7 +1785,8 @@ export default function App() {
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * (t === ticker ? shares + amount : shares), 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
       
-      setNotification({ type: 'success', message: `Bought ${amount} ${ticker} for ${formatCurrency(totalCost)}` });
+      const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
+      setNotification({ type: 'success', message: `Bought ${amount} ${ticker} @ ${formatCurrency(buyPrice)} (${impactPercent > 0 ? '+' : ''}${impactPercent}% impact)` });
     
     } else if (action === 'sell') {
       const currentHoldings = userData.holdings[ticker] || 0;
@@ -1754,21 +1796,28 @@ export default function App() {
         return;
       }
 
-      // Calculate new price FIRST - you sell at the LOWER price
-      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      const newPrice = Math.max(0.01, price - priceImpact); // Floor at $0.01, no ceiling
+      // Get liquidity for this character
+      const liquidity = getCharacterLiquidity(ticker);
       
-      // You get the LOWER price (after your selling pressure)
-      const sellPrice = newPrice;
+      // Calculate price impact using square root model (selling pushes price down)
+      const priceImpact = calculatePriceImpact(price, amount, liquidity);
+      const newMidPrice = Math.max(MIN_PRICE, price - priceImpact);
+      
+      // You get the BID price (mid - half spread) - market friction
+      const { bid } = getBidAskPrices(newMidPrice);
+      const sellPrice = Math.max(MIN_PRICE, bid);
       const totalRevenue = sellPrice * amount;
 
+      // Market settles at new mid price
+      const settledPrice = Math.round(newMidPrice * 100) / 100;
+
       await updateDoc(marketRef, {
-        [`prices.${ticker}`]: Math.round(newPrice * 100) / 100
+        [`prices.${ticker}`]: settledPrice,
+        [`volume.${ticker}`]: increment(amount)
       });
 
       // Record price history
-      await recordPriceHistory(ticker, Math.round(newPrice * 100) / 100);
+      await recordPriceHistory(ticker, settledPrice);
 
       // Update user
       await updateDoc(userRef, {
@@ -1784,17 +1833,21 @@ export default function App() {
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * (t === ticker ? shares - amount : shares), 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
       
-      setNotification({ type: 'success', message: `Sold ${amount} ${ticker} for ${formatCurrency(totalRevenue)}` });
+      const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
+      setNotification({ type: 'success', message: `Sold ${amount} ${ticker} @ ${formatCurrency(sellPrice)} (${impactPercent}% impact)` });
     
     } else if (action === 'short') {
       // SHORTING: Borrow shares and sell them, hoping to buy back cheaper
-      // You need margin as collateral but DON'T get proceeds until you cover
-      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      const newPrice = Math.max(0.01, price - priceImpact); // Floor at $0.01, no ceiling
+      // Get liquidity for this character
+      const liquidity = getCharacterLiquidity(ticker);
       
-      // Entry price is the lower price after your selling pressure
-      const shortPrice = newPrice;
+      // Calculate price impact (shorting = selling pressure)
+      const priceImpact = calculatePriceImpact(price, amount, liquidity);
+      const newMidPrice = Math.max(MIN_PRICE, price - priceImpact);
+      
+      // Entry price is the bid (you're selling borrowed shares)
+      const { bid } = getBidAskPrices(newMidPrice);
+      const shortPrice = Math.max(MIN_PRICE, bid);
       const marginRequired = shortPrice * amount * SHORT_MARGIN_REQUIREMENT;
       
       if (userData.cash < marginRequired) {
@@ -1818,6 +1871,8 @@ export default function App() {
         return;
       }
       
+      const settledPrice = Math.round(newMidPrice * 100) / 100;
+      
       await updateDoc(userRef, {
         cash: newCash,
         [`shorts.${ticker}`]: {
@@ -1830,19 +1885,21 @@ export default function App() {
       });
 
       await updateDoc(marketRef, {
-        [`prices.${ticker}`]: Math.round(newPrice * 100) / 100,
+        [`prices.${ticker}`]: settledPrice,
+        [`volume.${ticker}`]: increment(amount),
         totalTrades: increment(1)
       });
 
       // Record price history
-      await recordPriceHistory(ticker, Math.round(newPrice * 100) / 100);
+      await recordPriceHistory(ticker, settledPrice);
       
       // Record portfolio history
       const newPortfolioValue = newCash + Object.entries(userData.holdings || {})
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * shares, 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
 
-      setNotification({ type: 'success', message: `Shorted ${amount} ${ticker} at ${formatCurrency(shortPrice)}` });
+      const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
+      setNotification({ type: 'success', message: `Shorted ${amount} ${ticker} @ ${formatCurrency(shortPrice)} (${impactPercent}% impact)` });
     
     } else if (action === 'cover') {
       // COVER: Buy back shares to close short position
@@ -1854,13 +1911,16 @@ export default function App() {
         return;
       }
 
-      // Calculate price INCREASE (your cover causes buying pressure)
-      const impactMultiplier = Math.min(1, DIMINISHING_RETURNS_THRESHOLD / amount);
-      const priceImpact = price * TRADE_IMPACT_FACTOR * amount * impactMultiplier;
-      const newPrice = price + priceImpact; // No cap - prices can go as high as demand pushes them
+      // Get liquidity for this character
+      const liquidity = getCharacterLiquidity(ticker);
       
-      // You pay the HIGHER price to cover
-      const coverPrice = newPrice;
+      // Calculate price INCREASE (covering = buying pressure)
+      const priceImpact = calculatePriceImpact(price, amount, liquidity);
+      const newMidPrice = price + priceImpact;
+      
+      // You pay the ASK price to cover (buying back shares)
+      const { ask } = getBidAskPrices(newMidPrice);
+      const coverPrice = ask;
       
       // Profit/loss = entry price - cover price (per share)
       const profitPerShare = existingShort.entryPrice - coverPrice;
@@ -1878,6 +1938,7 @@ export default function App() {
 
       const remainingShares = existingShort.shares - amount;
       const remainingMargin = existingShort.margin - marginReturned;
+      const settledPrice = Math.round(newMidPrice * 100) / 100;
 
       // Update user: simply add cashBack (margin + profit or margin - loss)
       const updateData = {
@@ -1899,20 +1960,22 @@ export default function App() {
       await updateDoc(userRef, updateData);
 
       await updateDoc(marketRef, {
-        [`prices.${ticker}`]: Math.round(newPrice * 100) / 100,
+        [`prices.${ticker}`]: settledPrice,
+        [`volume.${ticker}`]: increment(amount),
         totalTrades: increment(1)
       });
 
       // Record price history
-      await recordPriceHistory(ticker, Math.round(newPrice * 100) / 100);
+      await recordPriceHistory(ticker, settledPrice);
       
       // Record portfolio history
       const newPortfolioValue = (userData.cash + cashBack) + Object.entries(userData.holdings || {})
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * shares, 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
 
+      const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
       const profitMsg = profit >= 0 ? `+${formatCurrency(profit)}` : formatCurrency(profit);
-      setNotification({ type: profit >= 0 ? 'success' : 'error', message: `Covered ${amount} ${ticker} (${profitMsg})` });
+      setNotification({ type: profit >= 0 ? 'success' : 'error', message: `Covered ${amount} ${ticker} @ ${formatCurrency(coverPrice)} (${profitMsg}, +${impactPercent}% impact)` });
     }
 
     setTimeout(() => setNotification(null), 3000);
