@@ -15,5 +15,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+// Request email scope explicitly
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
 export const db = getFirestore(app);
 export default app;
