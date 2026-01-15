@@ -52,6 +52,287 @@ const SHORT_INTEREST_RATE = 0.001; // 0.1% daily interest on short positions
 const SHORT_MARGIN_CALL_THRESHOLD = 0.25; // Auto-close if equity drops below 25%
 
 // ============================================
+// ACHIEVEMENTS SYSTEM
+// ============================================
+
+const ACHIEVEMENTS = {
+  // Trading milestones
+  FIRST_BLOOD: {
+    id: 'FIRST_BLOOD',
+    name: 'First Blood',
+    emoji: '🎯',
+    description: 'Make your first trade',
+    hint: 'Buy or sell any stock'
+  },
+  SHARK: {
+    id: 'SHARK',
+    name: 'Shark',
+    emoji: '🦈',
+    description: 'Execute a single trade worth $1,000+',
+    hint: 'Go big or go home'
+  },
+  DIVERSIFIED: {
+    id: 'DIVERSIFIED',
+    name: 'Diversified',
+    emoji: '🎨',
+    description: 'Hold 5+ different characters at once',
+    hint: 'Don\'t put all eggs in one basket'
+  },
+  
+  // Profit milestones
+  BULL_RUN: {
+    id: 'BULL_RUN',
+    name: 'Bull Run',
+    emoji: '📈',
+    description: 'Sell a stock for 50%+ profit',
+    hint: 'Buy low, sell high'
+  },
+  DIAMOND_HANDS: {
+    id: 'DIAMOND_HANDS',
+    name: 'Diamond Hands',
+    emoji: '💎',
+    description: 'Hold through a 30% dip and recover to profit',
+    hint: 'Hold strong through the storm'
+  },
+  COLD_BLOODED: {
+    id: 'COLD_BLOODED',
+    name: 'Cold Blooded',
+    emoji: '❄️',
+    description: 'Profit from closing a short position',
+    hint: 'Bet against the market and win'
+  },
+  
+  // Portfolio milestones
+  BROKE_2K: {
+    id: 'BROKE_2K',
+    name: 'Breaking Even... Kinda',
+    emoji: '💰',
+    description: 'Reach $2,500 portfolio value',
+    hint: 'Build your wealth'
+  },
+  BROKE_5K: {
+    id: 'BROKE_5K',
+    name: 'High Roller',
+    emoji: '🎰',
+    description: 'Reach $5,000 portfolio value',
+    hint: 'Keep growing'
+  },
+  BROKE_10K: {
+    id: 'BROKE_10K',
+    name: 'Big Shot',
+    emoji: '🌟',
+    description: 'Reach $10,000 portfolio value',
+    hint: 'You\'re getting serious'
+  },
+  BROKE_25K: {
+    id: 'BROKE_25K',
+    name: 'Tycoon',
+    emoji: '👑',
+    description: 'Reach $25,000 portfolio value',
+    hint: 'Market domination'
+  },
+  
+  // Prediction milestones
+  ORACLE: {
+    id: 'ORACLE',
+    name: 'Oracle',
+    emoji: '🔮',
+    description: 'Win 3 prediction bets',
+    hint: 'See the future'
+  },
+  PROPHET: {
+    id: 'PROPHET',
+    name: 'Prophet',
+    emoji: '📿',
+    description: 'Win 10 prediction bets',
+    hint: 'Your foresight is legendary'
+  },
+  
+  // Dedication milestones
+  DEDICATED_7: {
+    id: 'DEDICATED_7',
+    name: 'Regular',
+    emoji: '📅',
+    description: 'Check in 7 days total',
+    hint: 'Keep coming back'
+  },
+  DEDICATED_14: {
+    id: 'DEDICATED_14',
+    name: 'Committed',
+    emoji: '🔥',
+    description: 'Check in 14 days total',
+    hint: 'Two weeks strong'
+  },
+  DEDICATED_30: {
+    id: 'DEDICATED_30',
+    name: 'Devoted',
+    emoji: '⭐',
+    description: 'Check in 30 days total',
+    hint: 'A month of dedication'
+  },
+  DEDICATED_100: {
+    id: 'DEDICATED_100',
+    name: 'Legendary',
+    emoji: '🏆',
+    description: 'Check in 100 days total',
+    hint: 'True commitment'
+  },
+  
+  // Leaderboard
+  TOP_10: {
+    id: 'TOP_10',
+    name: 'Contender',
+    emoji: '🥉',
+    description: 'Reach the top 10 on the leaderboard',
+    hint: 'Climb the ranks'
+  },
+  TOP_3: {
+    id: 'TOP_3',
+    name: 'Elite',
+    emoji: '🥈',
+    description: 'Reach the top 3 on the leaderboard',
+    hint: 'Almost at the top'
+  },
+  TOP_1: {
+    id: 'TOP_1',
+    name: 'Champion',
+    emoji: '🥇',
+    description: 'Reach #1 on the leaderboard',
+    hint: 'The very best'
+  },
+  
+  // Special
+  TRADER_20: {
+    id: 'TRADER_20',
+    name: 'Active Trader',
+    emoji: '📊',
+    description: 'Complete 20 trades',
+    hint: 'Keep trading'
+  },
+  TRADER_100: {
+    id: 'TRADER_100',
+    name: 'Day Trader',
+    emoji: '💹',
+    description: 'Complete 100 trades',
+    hint: 'Trading is your life now'
+  }
+};
+
+// Check if user qualifies for lending (requires commitment + skill)
+const checkLendingEligibility = (userData) => {
+  if (!userData) return { eligible: false, reasons: [] };
+  
+  const achievements = userData.achievements || [];
+  const totalCheckins = userData.totalCheckins || 0;
+  const totalTrades = userData.totalTrades || 0;
+  const peakPortfolioValue = userData.peakPortfolioValue || 0;
+  
+  const requirements = [
+    { met: totalCheckins >= 14, label: '14+ daily check-ins', current: totalCheckins, required: 14 },
+    { met: totalTrades >= 20, label: '20+ total trades', current: totalTrades, required: 20 },
+    { met: peakPortfolioValue >= 2500, label: '$2,500+ peak portfolio', current: peakPortfolioValue, required: 2500 }
+  ];
+  
+  const allMet = requirements.every(r => r.met);
+  
+  return {
+    eligible: allMet,
+    requirements,
+    creditLimit: allMet ? calculateCreditLimit(userData) : 0
+  };
+};
+
+// Calculate credit limit based on achievements and stats
+const calculateCreditLimit = (userData) => {
+  const achievements = userData.achievements || [];
+  let limit = 500; // Base limit
+  
+  // Bonus for achievements
+  if (achievements.includes('BROKE_5K')) limit += 500;
+  if (achievements.includes('BROKE_10K')) limit += 1000;
+  if (achievements.includes('BROKE_25K')) limit += 2000;
+  if (achievements.includes('DEDICATED_30')) limit += 500;
+  if (achievements.includes('TRADER_100')) limit += 500;
+  
+  return Math.min(limit, 5000); // Cap at $5,000
+};
+
+// Helper function to check and award achievements after an action
+const checkAndAwardAchievements = async (userRef, userData, prices, context = {}) => {
+  const currentAchievements = userData.achievements || [];
+  const newAchievements = [];
+  
+  // Calculate current portfolio value
+  const portfolioValue = (userData.cash || 0) + Object.entries(userData.holdings || {})
+    .reduce((sum, [ticker, shares]) => sum + (prices[ticker] || 0) * shares, 0);
+  
+  // Calculate total holdings count
+  const holdingsCount = Object.values(userData.holdings || {}).filter(shares => shares > 0).length;
+  
+  // Trade count achievements
+  const totalTrades = userData.totalTrades || 0;
+  if (totalTrades >= 1 && !currentAchievements.includes('FIRST_BLOOD')) {
+    newAchievements.push('FIRST_BLOOD');
+  }
+  if (totalTrades >= 20 && !currentAchievements.includes('TRADER_20')) {
+    newAchievements.push('TRADER_20');
+  }
+  if (totalTrades >= 100 && !currentAchievements.includes('TRADER_100')) {
+    newAchievements.push('TRADER_100');
+  }
+  
+  // Portfolio value achievements
+  if (portfolioValue >= 2500 && !currentAchievements.includes('BROKE_2K')) {
+    newAchievements.push('BROKE_2K');
+  }
+  if (portfolioValue >= 5000 && !currentAchievements.includes('BROKE_5K')) {
+    newAchievements.push('BROKE_5K');
+  }
+  if (portfolioValue >= 10000 && !currentAchievements.includes('BROKE_10K')) {
+    newAchievements.push('BROKE_10K');
+  }
+  if (portfolioValue >= 25000 && !currentAchievements.includes('BROKE_25K')) {
+    newAchievements.push('BROKE_25K');
+  }
+  
+  // Diversification achievement
+  if (holdingsCount >= 5 && !currentAchievements.includes('DIVERSIFIED')) {
+    newAchievements.push('DIVERSIFIED');
+  }
+  
+  // Shark achievement (single trade worth $1000+)
+  if (context.tradeValue && context.tradeValue >= 1000 && !currentAchievements.includes('SHARK')) {
+    newAchievements.push('SHARK');
+  }
+  
+  // Cold Blooded achievement (profitable short cover)
+  if (context.shortProfit && context.shortProfit > 0 && !currentAchievements.includes('COLD_BLOODED')) {
+    newAchievements.push('COLD_BLOODED');
+  }
+  
+  // Update peak portfolio value
+  const peakPortfolioValue = Math.max(userData.peakPortfolioValue || 0, portfolioValue);
+  
+  // Build update object
+  const updateData = {};
+  
+  if (peakPortfolioValue > (userData.peakPortfolioValue || 0)) {
+    updateData.peakPortfolioValue = peakPortfolioValue;
+  }
+  
+  if (newAchievements.length > 0) {
+    updateData.achievements = arrayUnion(...newAchievements);
+  }
+  
+  // Only update if there's something to update
+  if (Object.keys(updateData).length > 0) {
+    await updateDoc(userRef, updateData);
+  }
+  
+  return newAchievements;
+};
+
+// ============================================
 // MARKET MECHANICS HELPERS
 // ============================================
 
@@ -998,7 +1279,7 @@ const AboutModal = ({ onClose, darkMode }) => {
               <div>
                 <h3 className="font-semibold text-teal-500 mb-2">Who made this?</h3>
                 <p className={mutedClass}>
-                  Stockism was created by <a href="https://github.com/UltiMyBeloved" target="_blank" rel="noopener noreferrer" className="text-teal-500 hover:text-teal-400 underline">UltiMyBeloved</a> for the Lookism community. 
+                  Stockism was created by <a href="https://github.com/UltiMyBeloved" target="_blank" rel="noopener noreferrer" className="text-teal-500 hover:text-teal-400 underline">Darth YG</a> for the Lookism community. 
                   It's a free, open-source project with no ads or monetization.
                 </p>
               </div>
@@ -1128,6 +1409,121 @@ const AboutModal = ({ onClose, darkMode }) => {
               </div>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// ACHIEVEMENTS MODAL
+// ============================================
+
+const AchievementsModal = ({ onClose, darkMode, userData }) => {
+  const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+  const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
+  const mutedClass = darkMode ? 'text-slate-400' : 'text-slate-600';
+  const bgClass = darkMode ? 'bg-slate-900' : 'bg-slate-100';
+  
+  const earnedAchievements = userData?.achievements || [];
+  const allAchievements = Object.values(ACHIEVEMENTS);
+  
+  // Group achievements by category
+  const categories = {
+    'Trading': ['FIRST_BLOOD', 'SHARK', 'DIVERSIFIED', 'TRADER_20', 'TRADER_100'],
+    'Profits': ['BULL_RUN', 'DIAMOND_HANDS', 'COLD_BLOODED'],
+    'Portfolio': ['BROKE_2K', 'BROKE_5K', 'BROKE_10K', 'BROKE_25K'],
+    'Predictions': ['ORACLE', 'PROPHET'],
+    'Dedication': ['DEDICATED_7', 'DEDICATED_14', 'DEDICATED_30', 'DEDICATED_100'],
+    'Leaderboard': ['TOP_10', 'TOP_3', 'TOP_1']
+  };
+  
+  // Get lending eligibility
+  const lendingStatus = checkLendingEligibility(userData);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div 
+        className={`w-full max-w-2xl max-h-[85vh] ${cardClass} border rounded-sm shadow-xl overflow-hidden flex flex-col`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'} flex justify-between items-center`}>
+          <div>
+            <h2 className={`text-xl font-bold ${textClass}`}>🏆 Achievements</h2>
+            <p className={`text-sm ${mutedClass}`}>
+              {earnedAchievements.length} / {allAchievements.length} unlocked
+            </p>
+          </div>
+          <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {/* Lending Status Banner */}
+          <div className={`p-4 rounded-sm ${lendingStatus.eligible 
+            ? (darkMode ? 'bg-green-900/30 border border-green-700' : 'bg-green-50 border border-green-200')
+            : (darkMode ? 'bg-slate-700/50' : 'bg-slate-100')
+          }`}>
+            <h3 className={`font-semibold mb-2 ${lendingStatus.eligible ? 'text-green-500' : textClass}`}>
+              {lendingStatus.eligible ? '✅ Lending Unlocked!' : '🔒 Lending System (Locked)'}
+            </h3>
+            {lendingStatus.eligible ? (
+              <p className={`text-sm ${mutedClass}`}>
+                Credit limit: <span className="text-green-500 font-semibold">${lendingStatus.creditLimit.toLocaleString()}</span>
+                <br />
+                <span className="text-yellow-500 text-xs">⚠️ Coming soon - lending is not yet active</span>
+              </p>
+            ) : (
+              <div className="space-y-1">
+                <p className={`text-xs ${mutedClass} mb-2`}>Unlock requirements:</p>
+                {lendingStatus.requirements.map((req, i) => (
+                  <div key={i} className={`text-sm flex items-center gap-2 ${req.met ? 'text-green-500' : mutedClass}`}>
+                    <span>{req.met ? '✓' : '○'}</span>
+                    <span>{req.label}</span>
+                    {!req.met && <span className="text-xs">({req.current}/{req.required})</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Achievement Categories */}
+          {Object.entries(categories).map(([category, achievementIds]) => (
+            <div key={category}>
+              <h3 className={`font-semibold mb-3 ${textClass}`}>{category}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {achievementIds.map(id => {
+                  const achievement = ACHIEVEMENTS[id];
+                  const earned = earnedAchievements.includes(id);
+                  
+                  return (
+                    <div 
+                      key={id}
+                      className={`p-3 rounded-sm border ${
+                        earned 
+                          ? (darkMode ? 'bg-teal-900/30 border-teal-700' : 'bg-teal-50 border-teal-300')
+                          : (darkMode ? 'bg-slate-700/30 border-slate-600' : 'bg-slate-50 border-slate-200')
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className={`text-2xl ${earned ? '' : 'grayscale opacity-50'}`}>
+                          {achievement.emoji}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-semibold text-sm ${earned ? 'text-teal-500' : mutedClass}`}>
+                            {achievement.name}
+                          </div>
+                          <div className={`text-xs ${mutedClass}`}>
+                            {earned ? achievement.description : achievement.hint}
+                          </div>
+                        </div>
+                        {earned && <span className="text-green-500 text-sm">✓</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1409,7 +1805,18 @@ const UsernameModal = ({ user, onComplete, darkMode }) => {
         portfolioValue: STARTING_CASH,
         portfolioHistory: [{ timestamp: now, value: STARTING_CASH }], // Initial data point
         lastCheckin: null,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        // Achievement tracking
+        achievements: [],
+        totalCheckins: 0,
+        totalTrades: 0,
+        peakPortfolioValue: STARTING_CASH,
+        predictionWins: 0,
+        // Track cost basis for profit calculations
+        costBasis: {}, // { ticker: averageCostPerShare }
+        // Lending system (unlocked later)
+        lendingUnlocked: false,
+        isBankrupt: false
       });
       onComplete();
     } catch (err) {
@@ -1663,6 +2070,7 @@ export default function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showPortfolio, setShowPortfolio] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [notification, setNotification] = useState(null);
   const [needsUsername, setNeedsUsername] = useState(false);
@@ -2053,11 +2461,12 @@ export default function App() {
       // Record price history
       await recordPriceHistory(ticker, settledPrice);
 
-      // Update user
+      // Update user with trade count
       await updateDoc(userRef, {
         cash: userData.cash - totalCost,
         [`holdings.${ticker}`]: (userData.holdings[ticker] || 0) + amount,
-        lastTradeTime: now
+        lastTradeTime: now,
+        totalTrades: increment(1)
       });
 
       await updateDoc(marketRef, { totalTrades: increment(1) });
@@ -2067,8 +2476,22 @@ export default function App() {
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * (t === ticker ? shares + amount : shares), 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
       
+      // Check achievements (pass trade value for Shark achievement)
+      const earnedAchievements = await checkAndAwardAchievements(userRef, {
+        ...userData,
+        cash: userData.cash - totalCost,
+        holdings: { ...userData.holdings, [ticker]: (userData.holdings[ticker] || 0) + amount },
+        totalTrades: (userData.totalTrades || 0) + 1
+      }, prices, { tradeValue: totalCost });
+      
       const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
-      setNotification({ type: 'success', message: `Bought ${amount} ${ticker} @ ${formatCurrency(buyPrice)} (${impactPercent > 0 ? '+' : ''}${impactPercent}% impact)` });
+      
+      if (earnedAchievements.length > 0) {
+        const achievement = ACHIEVEMENTS[earnedAchievements[0]];
+        setNotification({ type: 'achievement', message: `🏆 ${achievement.emoji} ${achievement.name} unlocked! Bought ${amount} ${ticker}` });
+      } else {
+        setNotification({ type: 'success', message: `Bought ${amount} ${ticker} @ ${formatCurrency(buyPrice)} (${impactPercent > 0 ? '+' : ''}${impactPercent}% impact)` });
+      }
     
     } else if (action === 'sell') {
       const currentHoldings = userData.holdings[ticker] || 0;
@@ -2101,11 +2524,12 @@ export default function App() {
       // Record price history
       await recordPriceHistory(ticker, settledPrice);
 
-      // Update user
+      // Update user with trade count
       await updateDoc(userRef, {
         cash: userData.cash + totalRevenue,
         [`holdings.${ticker}`]: currentHoldings - amount,
-        lastTradeTime: now
+        lastTradeTime: now,
+        totalTrades: increment(1)
       });
 
       await updateDoc(marketRef, { totalTrades: increment(1) });
@@ -2115,8 +2539,22 @@ export default function App() {
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * (t === ticker ? shares - amount : shares), 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
       
+      // Check achievements
+      const earnedAchievements = await checkAndAwardAchievements(userRef, {
+        ...userData,
+        cash: userData.cash + totalRevenue,
+        holdings: { ...userData.holdings, [ticker]: currentHoldings - amount },
+        totalTrades: (userData.totalTrades || 0) + 1
+      }, prices, { tradeValue: totalRevenue });
+      
       const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
-      setNotification({ type: 'success', message: `Sold ${amount} ${ticker} @ ${formatCurrency(sellPrice)} (${impactPercent}% impact)` });
+      
+      if (earnedAchievements.length > 0) {
+        const achievement = ACHIEVEMENTS[earnedAchievements[0]];
+        setNotification({ type: 'achievement', message: `🏆 ${achievement.emoji} ${achievement.name} unlocked! Sold ${amount} ${ticker}` });
+      } else {
+        setNotification({ type: 'success', message: `Sold ${amount} ${ticker} @ ${formatCurrency(sellPrice)} (${impactPercent}% impact)` });
+      }
     
     } else if (action === 'short') {
       // SHORTING: Borrow shares and sell them, hoping to buy back cheaper
@@ -2163,7 +2601,8 @@ export default function App() {
           margin: existingShort.margin + marginRequired,
           openedAt: existingShort.openedAt || now
         },
-        lastTradeTime: now
+        lastTradeTime: now,
+        totalTrades: increment(1)
       });
 
       await updateDoc(marketRef, {
@@ -2179,9 +2618,22 @@ export default function App() {
       const newPortfolioValue = newCash + Object.entries(userData.holdings || {})
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * shares, 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
+      
+      // Check achievements
+      const earnedAchievements = await checkAndAwardAchievements(userRef, {
+        ...userData,
+        cash: newCash,
+        totalTrades: (userData.totalTrades || 0) + 1
+      }, prices, { tradeValue: marginRequired });
 
       const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
-      setNotification({ type: 'success', message: `Shorted ${amount} ${ticker} @ ${formatCurrency(shortPrice)} (${impactPercent}% impact)` });
+      
+      if (earnedAchievements.length > 0) {
+        const achievement = ACHIEVEMENTS[earnedAchievements[0]];
+        setNotification({ type: 'achievement', message: `🏆 ${achievement.emoji} ${achievement.name} unlocked! Shorted ${amount} ${ticker}` });
+      } else {
+        setNotification({ type: 'success', message: `Shorted ${amount} ${ticker} @ ${formatCurrency(shortPrice)} (${impactPercent}% impact)` });
+      }
     
     } else if (action === 'cover') {
       // COVER: Buy back shares to close short position
@@ -2238,6 +2690,9 @@ export default function App() {
           openedAt: existingShort.openedAt
         };
       }
+      
+      // Add trade count
+      updateData.totalTrades = increment(1);
 
       await updateDoc(userRef, updateData);
 
@@ -2254,10 +2709,26 @@ export default function App() {
       const newPortfolioValue = (userData.cash + cashBack) + Object.entries(userData.holdings || {})
         .reduce((sum, [t, shares]) => sum + (prices[t] || 0) * shares, 0);
       await recordPortfolioHistory(user.uid, Math.round(newPortfolioValue * 100) / 100);
+      
+      // Check achievements (pass short profit for Cold Blooded achievement)
+      const earnedAchievements = await checkAndAwardAchievements(userRef, {
+        ...userData,
+        cash: userData.cash + cashBack,
+        totalTrades: (userData.totalTrades || 0) + 1
+      }, prices, { shortProfit: profit });
 
       const impactPercent = ((newMidPrice - price) / price * 100).toFixed(2);
       const profitMsg = profit >= 0 ? `+${formatCurrency(profit)}` : formatCurrency(profit);
-      setNotification({ type: profit >= 0 ? 'success' : 'error', message: `Covered ${amount} ${ticker} @ ${formatCurrency(coverPrice)} (${profitMsg}, +${impactPercent}% impact)` });
+      
+      if (earnedAchievements.length > 0 && earnedAchievements.includes('COLD_BLOODED')) {
+        const achievement = ACHIEVEMENTS['COLD_BLOODED'];
+        setNotification({ type: 'achievement', message: `🏆 ${achievement.emoji} ${achievement.name} unlocked! ${profitMsg} profit from short!` });
+      } else if (earnedAchievements.length > 0) {
+        const achievement = ACHIEVEMENTS[earnedAchievements[0]];
+        setNotification({ type: 'achievement', message: `🏆 ${achievement.emoji} ${achievement.name} unlocked!` });
+      } else {
+        setNotification({ type: profit >= 0 ? 'success' : 'error', message: `Covered ${amount} ${ticker} @ ${formatCurrency(coverPrice)} (${profitMsg}, +${impactPercent}% impact)` });
+      }
     }
 
     setTimeout(() => setNotification(null), 3000);
@@ -2308,12 +2779,47 @@ export default function App() {
     }
 
     const userRef = doc(db, 'users', user.uid);
-    await updateDoc(userRef, {
+    const newTotalCheckins = (userData.totalCheckins || 0) + 1;
+    
+    // Check for check-in achievements
+    const newAchievements = [];
+    const currentAchievements = userData.achievements || [];
+    
+    if (newTotalCheckins >= 7 && !currentAchievements.includes('DEDICATED_7')) {
+      newAchievements.push('DEDICATED_7');
+    }
+    if (newTotalCheckins >= 14 && !currentAchievements.includes('DEDICATED_14')) {
+      newAchievements.push('DEDICATED_14');
+    }
+    if (newTotalCheckins >= 30 && !currentAchievements.includes('DEDICATED_30')) {
+      newAchievements.push('DEDICATED_30');
+    }
+    if (newTotalCheckins >= 100 && !currentAchievements.includes('DEDICATED_100')) {
+      newAchievements.push('DEDICATED_100');
+    }
+    
+    const updateData = {
       cash: userData.cash + DAILY_BONUS,
-      lastCheckin: today
-    });
+      lastCheckin: today,
+      totalCheckins: newTotalCheckins
+    };
+    
+    if (newAchievements.length > 0) {
+      updateData.achievements = arrayUnion(...newAchievements);
+    }
+    
+    await updateDoc(userRef, updateData);
 
-    setNotification({ type: 'success', message: `Daily check-in: +${formatCurrency(DAILY_BONUS)}!` });
+    // Show achievement notification if earned
+    if (newAchievements.length > 0) {
+      const achievement = ACHIEVEMENTS[newAchievements[0]];
+      setNotification({ 
+        type: 'achievement', 
+        message: `🏆 Achievement Unlocked: ${achievement.emoji} ${achievement.name}!` 
+      });
+    } else {
+      setNotification({ type: 'success', message: `Daily check-in: +${formatCurrency(DAILY_BONUS)}!` });
+    }
     setTimeout(() => setNotification(null), 3000);
   }, [user, userData]);
 
@@ -2448,6 +2954,12 @@ export default function App() {
               className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
               🏆 Leaderboard
             </button>
+            {!isGuest && (
+              <button onClick={() => setShowAchievements(true)}
+                className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
+                🎯 Achievements
+              </button>
+            )}
             {user && ADMIN_UIDS.includes(user.uid) && (
               <button onClick={() => setShowAdmin(true)}
                 className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
@@ -2484,6 +2996,7 @@ export default function App() {
           <div className={`mb-4 p-3 rounded-sm text-sm font-semibold ${
             notification.type === 'error' ? 'bg-red-100 border border-red-300 text-red-700' :
             notification.type === 'info' ? 'bg-blue-100 border border-blue-300 text-blue-700' :
+            notification.type === 'achievement' ? 'bg-yellow-100 border border-yellow-400 text-yellow-800 animate-pulse' :
             'bg-green-100 border border-green-300 text-green-700'
           }`}>{notification.message}</div>
         )}
@@ -2636,6 +3149,13 @@ export default function App() {
       )}
       {showLeaderboard && <LeaderboardModal onClose={() => setShowLeaderboard(false)} darkMode={darkMode} />}
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} darkMode={darkMode} />}
+      {showAchievements && !isGuest && (
+        <AchievementsModal 
+          onClose={() => setShowAchievements(false)} 
+          darkMode={darkMode} 
+          userData={userData}
+        />
+      )}
       {showAdmin && (
         <AdminPanel
           user={user}
