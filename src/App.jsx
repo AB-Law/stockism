@@ -3212,7 +3212,7 @@ export default function App() {
           <img 
             src="/stockism logo.png" 
             alt="Stockism" 
-            className="h-[100px] sm:h-[115px] md:h-[150px] w-auto"
+            className="h-[100px] sm:h-[115px] md:h-[200px] w-auto"
           />
         </div>
 
