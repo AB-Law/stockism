@@ -2100,54 +2100,51 @@ const LoginModal = ({ onClose, darkMode }) => {
           <div className="flex-1 h-px bg-current opacity-30"></div>
         </div>
 
-        {/* Email Form */}
-        <form onSubmit={handleEmailSubmit} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={`w-full px-3 py-2 border rounded-sm text-sm ${inputClass}`}
-            disabled={loading}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={`w-full px-3 py-2 border rounded-sm text-sm ${inputClass}`}
-            disabled={loading}
-          />
-          {isRegistering && (
+        {/* Email Form - Sign in only (registration disabled due to bots) */}
+        {!isRegistering ? (
+          <form onSubmit={handleEmailSubmit} className="space-y-3">
             <input
-              type="password"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className={`w-full px-3 py-2 border rounded-sm text-sm ${inputClass}`}
               disabled={loading}
             />
-          )}
-          {error && (
-            <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded-sm text-sm">
-              {error}
-            </div>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-sm text-sm uppercase disabled:opacity-50"
-          >
-            {loading ? 'Please wait...' : (isRegistering ? 'Create Account' : 'Sign In')}
-          </button>
-        </form>
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`w-full px-3 py-2 border rounded-sm text-sm ${inputClass}`}
+              disabled={loading}
+            />
+            {error && (
+              <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded-sm text-sm">
+                {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-sm text-sm uppercase disabled:opacity-50"
+            >
+              {loading ? 'Please wait...' : 'Sign In'}
+            </button>
+          </form>
+        ) : (
+          <div className={`text-center py-4 ${mutedClass}`}>
+            <p className="text-sm mb-2">📧 Email registration is temporarily disabled.</p>
+            <p className="text-sm">Please use <strong>Google Sign-In</strong> above to create an account.</p>
+          </div>
+        )}
 
         <div className="mt-4 text-center">
           <button
             onClick={() => { setIsRegistering(!isRegistering); setError(''); }}
             className={`text-sm ${mutedClass} hover:text-teal-600`}
           >
-            {isRegistering ? 'Already have an account? Sign in' : "Don't have an account? Register"}
+            {isRegistering ? 'Already have an account? Sign in with email' : "Don't have an account? Register"}
           </button>
         </div>
       </div>
