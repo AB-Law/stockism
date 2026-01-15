@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { CHARACTERS } from './characters';
 
 // Put your admin user IDs here (your Firebase Auth UID)
 // Find your UID in Firebase Console → Authentication → Users
 const ADMIN_UIDS = [
-'4usiVxPmHLhmitEKH2HfCpbx4Yi1'
+  '4usiVxPmHLhmitEKH2HfCpbx4Yi1'
 ];
 
-const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
+const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
   const [activeTab, setActiveTab] = useState('create');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
@@ -22,6 +23,12 @@ const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
   const [selectedPrediction, setSelectedPrediction] = useState(null);
   const [selectedOutcome, setSelectedOutcome] = useState('');
 
+  // Price adjustment state
+  const [selectedTicker, setSelectedTicker] = useState('');
+  const [adjustmentType, setAdjustmentType] = useState('set'); // 'set' or 'percent'
+  const [newPrice, setNewPrice] = useState('');
+  const [percentChange, setPercentChange] = useState('');
+
   const isAdmin = user && ADMIN_UIDS.includes(user.uid);
 
   const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
@@ -34,6 +41,77 @@ const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
   const showMessage = (type, text) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
+  };
+
+  // Adjust character price
+  const handlePriceAdjustment = async () => {
+    if (!selectedTicker) {
+      showMessage('error', 'Please select a character');
+      return;
+    }
+
+    const currentPrice = prices[selectedTicker];
+    if (!currentPrice) {
+      showMessage('error', 'Could not get current price');
+      return;
+    }
+
+    let targetPrice;
+    if (adjustmentType === 'set') {
+      targetPrice = parseFloat(newPrice);
+      if (isNaN(targetPrice) || targetPrice <= 0) {
+        showMessage('error', 'Please enter a valid price');
+        return;
+      }
+    } else {
+      const percent = parseFloat(percentChange);
+      if (isNaN(percent)) {
+        showMessage('error', 'Please enter a valid percentage');
+        return;
+      }
+      targetPrice = currentPrice * (1 + percent / 100);
+      if (targetPrice <= 0) {
+        showMessage('error', 'Resulting price would be negative');
+        return;
+      }
+    }
+
+    targetPrice = Math.round(targetPrice * 100) / 100;
+
+    setLoading(true);
+    try {
+      const marketRef = doc(db, 'market', 'current');
+      const snap = await getDoc(marketRef);
+      
+      if (snap.exists()) {
+        const data = snap.data();
+        const currentHistory = data.priceHistory?.[selectedTicker] || [];
+        const now = Date.now();
+        
+        // Add to price history for natural chart appearance
+        const updatedHistory = [...currentHistory, { timestamp: now, price: targetPrice }].slice(-1000);
+        
+        await updateDoc(marketRef, {
+          [`prices.${selectedTicker}`]: targetPrice,
+          [`priceHistory.${selectedTicker}`]: updatedHistory
+        });
+
+        const character = CHARACTERS.find(c => c.ticker === selectedTicker);
+        const changePercent = ((targetPrice - currentPrice) / currentPrice * 100).toFixed(1);
+        const direction = targetPrice > currentPrice ? '📈' : '📉';
+        
+        showMessage('success', `${direction} ${character?.name || selectedTicker}: $${currentPrice.toFixed(2)} → $${targetPrice.toFixed(2)} (${changePercent > 0 ? '+' : ''}${changePercent}%)`);
+        
+        // Reset form
+        setSelectedTicker('');
+        setNewPrice('');
+        setPercentChange('');
+      }
+    } catch (err) {
+      console.error(err);
+      showMessage('error', 'Failed to adjust price');
+    }
+    setLoading(false);
   };
 
   // Create new prediction
@@ -170,6 +248,9 @@ const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
 
   const unresolvedPredictions = predictions.filter(p => !p.resolved);
 
+  // Sort characters by name for the dropdown
+  const sortedCharacters = [...CHARACTERS].sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className={`w-full max-w-2xl ${cardClass} border rounded-sm shadow-xl overflow-hidden max-h-[90vh] flex flex-col`}
@@ -186,10 +267,16 @@ const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
         {/* Tabs */}
         <div className={`flex border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <button
+            onClick={() => setActiveTab('prices')}
+            className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'prices' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
+          >
+            💰 Prices
+          </button>
+          <button
             onClick={() => setActiveTab('create')}
             className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'create' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
-            ➕ Create New
+            ➕ Prediction
           </button>
           <button
             onClick={() => setActiveTab('resolve')}
@@ -201,7 +288,7 @@ const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
             onClick={() => setActiveTab('manage')}
             className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'manage' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
-            📋 All ({predictions.length})
+            📋 All
           </button>
         </div>
 
@@ -217,6 +304,122 @@ const AdminPanel = ({ user, predictions, darkMode, onClose }) => {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
           
+          {/* PRICES TAB */}
+          {activeTab === 'prices' && (
+            <div className="space-y-4">
+              <div className={`p-3 rounded-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-100'}`}>
+                <p className={`text-sm ${mutedClass} mb-2`}>
+                  📊 Manually adjust character prices. Use this for story events (deaths, power-ups, etc.)
+                </p>
+              </div>
+
+              <div>
+                <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>Select Character</label>
+                <select
+                  value={selectedTicker}
+                  onChange={e => setSelectedTicker(e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
+                >
+                  <option value="">-- Select Character --</option>
+                  {sortedCharacters.map(c => (
+                    <option key={c.ticker} value={c.ticker}>
+                      {c.name} (${c.ticker}) - Current: ${(prices[c.ticker] || c.basePrice).toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedTicker && (
+                <>
+                  <div className={`p-3 rounded-sm ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                    <div className="flex justify-between items-center">
+                      <span className={textClass}>Current Price:</span>
+                      <span className={`text-lg font-bold ${textClass}`}>
+                        ${(prices[selectedTicker] || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase mb-2 ${mutedClass}`}>Adjustment Type</label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setAdjustmentType('set')}
+                        className={`flex-1 py-2 text-sm font-semibold rounded-sm ${
+                          adjustmentType === 'set' ? 'bg-teal-600 text-white' : darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        Set Price
+                      </button>
+                      <button
+                        onClick={() => setAdjustmentType('percent')}
+                        className={`flex-1 py-2 text-sm font-semibold rounded-sm ${
+                          adjustmentType === 'percent' ? 'bg-teal-600 text-white' : darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        % Change
+                      </button>
+                    </div>
+                  </div>
+
+                  {adjustmentType === 'set' ? (
+                    <div>
+                      <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>New Price ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={newPrice}
+                        onChange={e => setNewPrice(e.target.value)}
+                        placeholder="Enter new price..."
+                        className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>Percentage Change</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={percentChange}
+                        onChange={e => setPercentChange(e.target.value)}
+                        placeholder="e.g. -20 for -20%, 50 for +50%"
+                        className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
+                      />
+                      <div className="flex gap-2 mt-2">
+                        {[-50, -25, -10, 10, 25, 50].map(pct => (
+                          <button
+                            key={pct}
+                            onClick={() => setPercentChange(pct.toString())}
+                            className={`flex-1 py-1.5 text-xs font-semibold rounded-sm ${
+                              pct < 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                            } text-white`}
+                          >
+                            {pct > 0 ? '+' : ''}{pct}%
+                          </button>
+                        ))}
+                      </div>
+                      {percentChange && (
+                        <p className={`text-sm ${mutedClass} mt-2`}>
+                          Preview: ${(prices[selectedTicker] || 0).toFixed(2)} → $
+                          {(Math.round((prices[selectedTicker] || 0) * (1 + parseFloat(percentChange || 0) / 100) * 100) / 100).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handlePriceAdjustment}
+                    disabled={loading}
+                    className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-sm disabled:opacity-50"
+                  >
+                    {loading ? 'Updating...' : '💰 Apply Price Change'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {/* CREATE TAB */}
           {activeTab === 'create' && (
             <div className="space-y-4">
