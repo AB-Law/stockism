@@ -2095,7 +2095,7 @@ export default function App() {
           <div className="flex flex-wrap justify-between items-center gap-4">
             <div className="flex items-center gap-2">
               <img 
-                src="/stockism_logo.png" 
+                src="/stockism logo.png" 
                 alt="Stockism" 
                 className="h-10 sm:h-12 w-auto"
               />
