@@ -473,6 +473,21 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
         }),
       }));
     
+    // Sample down to ~25 points for cleaner interaction
+    const maxPoints = 25;
+    if (data.length > maxPoints) {
+      const step = Math.floor(data.length / maxPoints);
+      const sampled = [];
+      for (let i = 0; i < data.length; i += step) {
+        sampled.push(data[i]);
+      }
+      // Always include the last point
+      if (sampled[sampled.length - 1] !== data[data.length - 1]) {
+        sampled.push(data[data.length - 1]);
+      }
+      data = sampled;
+    }
+    
     // If not enough data, create synthetic chart from base price to current
     if (data.length < 2) {
       const now = Date.now();
@@ -610,7 +625,8 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
                   <g key={i}>
                     <circle cx={getX(i)} cy={getY(point.price)} r="12" fill="transparent"
                       className="cursor-pointer"
-                      onMouseEnter={() => setHoveredPoint({ ...point, x: getX(i), y: getY(point.price) })} />
+                      onMouseEnter={() => setHoveredPoint({ ...point, x: getX(i), y: getY(point.price) })}
+                      onTouchStart={() => setHoveredPoint({ ...point, x: getX(i), y: getY(point.price) })} />
                     {hoveredPoint?.timestamp === point.timestamp && (
                       <>
                         <line x1={getX(i)} y1={paddingY} x2={getX(i)} y2={paddingY + chartHeight}
@@ -857,6 +873,7 @@ const PortfolioModal = ({ holdings, prices, portfolioHistory, currentValue, onCl
   const [sellAmounts, setSellAmounts] = useState({});
   const [showChart, setShowChart] = useState(true);
   const [timeRange, setTimeRange] = useState('7d');
+  const [hoveredPoint, setHoveredPoint] = useState(null);
   
   const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
   const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
@@ -911,6 +928,21 @@ const PortfolioModal = ({ holdings, prices, portfolioHistory, currentValue, onCl
           month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
         }),
       }));
+    
+    // Sample down to ~20 points for cleaner interaction
+    const maxPoints = 20;
+    if (data.length > maxPoints) {
+      const step = Math.floor(data.length / maxPoints);
+      const sampled = [];
+      for (let i = 0; i < data.length; i += step) {
+        sampled.push(data[i]);
+      }
+      // Always include the last point
+      if (sampled[sampled.length - 1] !== data[data.length - 1]) {
+        sampled.push(data[data.length - 1]);
+      }
+      data = sampled;
+    }
     
     // If only 1 point, add current value as second point to show a line
     if (data.length === 1) {
@@ -1019,7 +1051,11 @@ const PortfolioModal = ({ holdings, prices, portfolioHistory, currentValue, onCl
           
           {showChart && (
             <div className={`px-4 pb-4 ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full">
+              <svg 
+                viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+                className="w-full"
+                onMouseLeave={() => setHoveredPoint(null)}
+              >
                 {/* Grid lines */}
                 {[0, 0.5, 1].map((ratio, i) => {
                   const y = paddingY + ratio * chartHeight;
@@ -1035,8 +1071,106 @@ const PortfolioModal = ({ holdings, prices, portfolioHistory, currentValue, onCl
                     </g>
                   );
                 })}
+                
+                {/* Area fill */}
                 <path d={areaPath} fill={fillColor} />
+                
+                {/* Line */}
                 <path d={pathData} fill="none" stroke={strokeColor} strokeWidth="2" />
+                
+                {/* Interactive points */}
+                {chartData.map((point, i) => {
+                  const x = getX(i);
+                  const y = getY(point.value);
+                  const isHovered = hoveredPoint === i;
+                  
+                  return (
+                    <g key={i}>
+                      {/* Invisible larger hit area for easier touch/hover */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={15}
+                        fill="transparent"
+                        style={{ cursor: 'pointer' }}
+                        onMouseEnter={() => setHoveredPoint(i)}
+                        onTouchStart={() => setHoveredPoint(i)}
+                      />
+                      {/* Visible dot */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={isHovered ? 6 : 3}
+                        fill={isHovered ? strokeColor : (darkMode ? '#1e293b' : '#f8fafc')}
+                        stroke={strokeColor}
+                        strokeWidth={isHovered ? 3 : 2}
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
+                    </g>
+                  );
+                })}
+                
+                {/* Hover tooltip */}
+                {hoveredPoint !== null && chartData[hoveredPoint] && (() => {
+                  const point = chartData[hoveredPoint];
+                  const x = getX(hoveredPoint);
+                  const y = getY(point.value);
+                  const tooltipWidth = 100;
+                  const tooltipHeight = 40;
+                  
+                  // Adjust tooltip position to stay in bounds
+                  let tooltipX = x - tooltipWidth / 2;
+                  if (tooltipX < 5) tooltipX = 5;
+                  if (tooltipX + tooltipWidth > svgWidth - 5) tooltipX = svgWidth - tooltipWidth - 5;
+                  
+                  const tooltipY = y - tooltipHeight - 10;
+                  
+                  return (
+                    <g>
+                      {/* Vertical line */}
+                      <line
+                        x1={x}
+                        y1={paddingY}
+                        x2={x}
+                        y2={paddingY + chartHeight}
+                        stroke={strokeColor}
+                        strokeWidth="1"
+                        strokeDasharray="4,4"
+                        opacity="0.5"
+                      />
+                      {/* Tooltip background */}
+                      <rect
+                        x={tooltipX}
+                        y={tooltipY}
+                        width={tooltipWidth}
+                        height={tooltipHeight}
+                        rx="4"
+                        fill={darkMode ? '#334155' : '#1e293b'}
+                      />
+                      {/* Tooltip value */}
+                      <text
+                        x={tooltipX + tooltipWidth / 2}
+                        y={tooltipY + 16}
+                        textAnchor="middle"
+                        fill="#14b8a6"
+                        fontSize="12"
+                        fontWeight="bold"
+                      >
+                        {formatCurrency(point.value)}
+                      </text>
+                      {/* Tooltip date */}
+                      <text
+                        x={tooltipX + tooltipWidth / 2}
+                        y={tooltipY + 32}
+                        textAnchor="middle"
+                        fill="#94a3b8"
+                        fontSize="9"
+                      >
+                        {point.fullDate}
+                      </text>
+                    </g>
+                  );
+                })()}
               </svg>
             </div>
           )}
@@ -1568,16 +1702,24 @@ const CheckInButton = ({ isGuest, lastCheckin, onCheckin, darkMode }) => {
     return () => clearInterval(interval);
   }, [hasCheckedIn]);
 
+  // Toggle tooltip on click/tap for mobile support
+  const handleButtonClick = () => {
+    if (hasCheckedIn) {
+      setShowTooltip(prev => !prev);
+    } else {
+      onCheckin();
+    }
+  };
+
   return (
     <div className="relative mt-2">
       <button 
-        onClick={onCheckin}
-        disabled={hasCheckedIn}
+        onClick={handleButtonClick}
         onMouseEnter={() => hasCheckedIn && setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         className={`w-full py-1.5 text-xs font-semibold uppercase rounded-sm ${
           hasCheckedIn
-            ? 'bg-slate-400 cursor-not-allowed' 
+            ? 'bg-slate-400 cursor-pointer' 
             : 'bg-teal-600 hover:bg-teal-700'
         } text-white`}
       >
