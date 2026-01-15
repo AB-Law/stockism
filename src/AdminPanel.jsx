@@ -47,6 +47,12 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
   const [recoveryBets, setRecoveryBets] = useState([]);
   const [recoveryWinner, setRecoveryWinner] = useState('');
   const [recoveryOptions, setRecoveryOptions] = useState([]);
+  
+  // User search state
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [allUsers, setAllUsers] = useState([]);
 
   const isAdmin = user && ADMIN_UIDS.includes(user.uid);
 
@@ -251,6 +257,55 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
     setLoading(false);
   };
 
+  // Load all users for search
+  const handleLoadAllUsers = async () => {
+    setLoading(true);
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+      
+      const users = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        users.push({
+          id: doc.id,
+          displayName: data.displayName || 'Unknown',
+          cash: data.cash || 0,
+          portfolioValue: data.portfolioValue || 0,
+          holdings: data.holdings || {},
+          bets: data.bets || {},
+          totalTrades: data.totalTrades || 0,
+          isAdmin: data.isAdmin || false
+        });
+      });
+      
+      // Sort by portfolio value
+      users.sort((a, b) => b.portfolioValue - a.portfolioValue);
+      setAllUsers(users);
+      setUserSearchResults(users);
+      showMessage('success', `Loaded ${users.length} users`);
+    } catch (err) {
+      console.error(err);
+      showMessage('error', 'Failed to load users');
+    }
+    setLoading(false);
+  };
+
+  // Filter users by search query
+  const handleUserSearch = (query) => {
+    setUserSearchQuery(query);
+    if (!query.trim()) {
+      setUserSearchResults(allUsers);
+      return;
+    }
+    
+    const filtered = allUsers.filter(u => 
+      u.displayName.toLowerCase().includes(query.toLowerCase()) ||
+      u.id.toLowerCase().includes(query.toLowerCase())
+    );
+    setUserSearchResults(filtered);
+  };
+
   // Scan all users for bets on a specific prediction ID
   const handleScanForBets = async () => {
     if (!recoveryPredictionId.trim()) {
@@ -414,34 +469,40 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
         </div>
 
         {/* Tabs */}
-        <div className={`flex border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+        <div className={`flex border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'} overflow-x-auto`}>
           <button
             onClick={() => setActiveTab('prices')}
-            className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'prices' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'prices' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
             💰 Prices
           </button>
           <button
             onClick={() => setActiveTab('create')}
-            className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'create' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'create' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
-            ➕ Prediction
+            ➕ Pred
           </button>
           <button
             onClick={() => setActiveTab('resolve')}
-            className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'resolve' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'resolve' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
-            ✅ Resolve ({unresolvedPredictions.length})
+            ✅ ({unresolvedPredictions.length})
           </button>
           <button
             onClick={() => setActiveTab('recover')}
-            className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'recover' ? 'text-amber-500 border-b-2 border-amber-500' : mutedClass}`}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'recover' ? 'text-amber-500 border-b-2 border-amber-500' : mutedClass}`}
           >
-            🔧 Recover
+            🔧 Fix
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
+          >
+            👥 Users
           </button>
           <button
             onClick={() => setActiveTab('manage')}
-            className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'manage' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'manage' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
             📋 All
           </button>
@@ -847,6 +908,142 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                     <strong>Payout Winners:</strong> Winners split the total pool (select winner first).
                   </p>
                 </>
+              )}
+            </div>
+          )}
+
+          {/* USERS TAB */}
+          {activeTab === 'users' && (
+            <div className="space-y-4">
+              <div className={`p-3 rounded-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-100'}`}>
+                <p className={`text-sm ${mutedClass}`}>
+                  👥 Search and view user details. Click "Load Users" first.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={e => handleUserSearch(e.target.value)}
+                  placeholder="Search by name or ID..."
+                  className={`flex-1 px-3 py-2 border rounded-sm ${inputClass}`}
+                />
+                <button
+                  onClick={handleLoadAllUsers}
+                  disabled={loading}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-sm disabled:opacity-50"
+                >
+                  {loading ? '...' : '🔄 Load'}
+                </button>
+              </div>
+
+              {userSearchResults.length > 0 && (
+                <div className={`text-xs ${mutedClass} mb-2`}>
+                  Showing {userSearchResults.length} of {allUsers.length} users
+                </div>
+              )}
+
+              {/* Selected User Detail */}
+              {selectedUser && (
+                <div className={`p-4 rounded-sm border-2 border-teal-500 ${darkMode ? 'bg-slate-700' : 'bg-teal-50'}`}>
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className={`font-bold text-lg ${textClass}`}>{selectedUser.displayName}</h3>
+                      <p className={`text-xs ${mutedClass} font-mono`}>{selectedUser.id}</p>
+                    </div>
+                    <button 
+                      onClick={() => setSelectedUser(null)}
+                      className={`text-xl ${mutedClass} hover:text-red-500`}
+                    >×</button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className={`p-2 rounded ${darkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <div className={`text-xs ${mutedClass}`}>Cash</div>
+                      <div className={`font-bold text-green-500`}>${selectedUser.cash.toFixed(2)}</div>
+                    </div>
+                    <div className={`p-2 rounded ${darkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <div className={`text-xs ${mutedClass}`}>Portfolio</div>
+                      <div className={`font-bold ${textClass}`}>${selectedUser.portfolioValue.toFixed(2)}</div>
+                    </div>
+                  </div>
+
+                  {/* Holdings */}
+                  {Object.keys(selectedUser.holdings).length > 0 && (
+                    <div className="mb-4">
+                      <h4 className={`text-xs font-semibold uppercase ${mutedClass} mb-2`}>Holdings</h4>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {Object.entries(selectedUser.holdings).map(([ticker, data]) => (
+                          <div key={ticker} className={`text-sm flex justify-between ${textClass}`}>
+                            <span>{ticker}</span>
+                            <span>{data.shares} @ ${data.avgCost?.toFixed(2) || '?'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bets */}
+                  {Object.keys(selectedUser.bets).length > 0 && (
+                    <div>
+                      <h4 className={`text-xs font-semibold uppercase ${mutedClass} mb-2`}>Bets</h4>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {Object.entries(selectedUser.bets).map(([predId, bet]) => (
+                          <div key={predId} className={`text-sm ${textClass}`}>
+                            <div className="flex justify-between">
+                              <span className="font-mono text-xs">{predId}</span>
+                              <span className="text-teal-500">${bet.amount}</span>
+                            </div>
+                            <div className={`text-xs ${mutedClass}`}>
+                              {bet.option} 
+                              {bet.paid && (
+                                <span className={bet.payout > 0 ? 'text-green-500 ml-2' : 'text-red-400 ml-2'}>
+                                  {bet.payout > 0 ? `Won $${bet.payout.toFixed(2)}` : 'Lost'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* User List */}
+              {!selectedUser && userSearchResults.length > 0 && (
+                <div className="space-y-1 max-h-96 overflow-y-auto">
+                  {userSearchResults.slice(0, 50).map((u, i) => (
+                    <div 
+                      key={u.id}
+                      onClick={() => setSelectedUser(u)}
+                      className={`p-2 rounded-sm cursor-pointer flex justify-between items-center ${
+                        darkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-100'
+                      }`}
+                    >
+                      <div>
+                        <span className={`font-semibold ${textClass}`}>{u.displayName}</span>
+                        {u.isAdmin && <span className="ml-2 text-xs text-amber-500">👑</span>}
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-sm font-bold ${textClass}`}>${u.portfolioValue.toFixed(2)}</div>
+                        <div className={`text-xs ${mutedClass}`}>Cash: ${u.cash.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {userSearchResults.length > 50 && (
+                    <p className={`text-center text-xs ${mutedClass} py-2`}>
+                      Showing first 50 results. Use search to narrow down.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {allUsers.length === 0 && (
+                <p className={`text-center ${mutedClass} py-8`}>
+                  Click "Load" to fetch all users
+                </p>
               )}
             </div>
           )}
