@@ -19,6 +19,19 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
   const [options, setOptions] = useState(['', '', '', '']);
   const [daysUntilEnd, setDaysUntilEnd] = useState(7);
   
+  // Calculate end time at 8:55 AM CST on target day
+  const getEndTime = (days) => {
+    const now = new Date();
+    const target = new Date(now);
+    target.setDate(target.getDate() + days);
+    // Set to 8:55 AM CST (CST is UTC-6)
+    // 8:55 AM CST = 14:55 UTC
+    target.setUTCHours(14, 55, 0, 0);
+    return target.getTime();
+  };
+  
+  const endDate = new Date(getEndTime(daysUntilEnd));
+  
   // Resolve prediction state
   const [selectedPrediction, setSelectedPrediction] = useState(null);
   const [selectedOutcome, setSelectedOutcome] = useState('');
@@ -151,7 +164,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
         question: question.trim(),
         options: validOptions.map(o => o.trim()),
         pools,
-        endsAt: Date.now() + (daysUntilEnd * 24 * 60 * 60 * 1000),
+        endsAt: getEndTime(daysUntilEnd),
         resolved: false,
         outcome: null,
         payoutsProcessed: false,
@@ -429,7 +442,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                   type="text"
                   value={question}
                   onChange={e => setQuestion(e.target.value)}
-                  placeholder="Will Tom Lee defeat J this chapter?"
+                  placeholder=""
                   className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
                 />
               </div>
@@ -447,7 +460,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                         newOpts[idx] = e.target.value;
                         setOptions(newOpts);
                       }}
-                      placeholder={`Option ${idx + 1}${idx < 2 ? ' (required)' : ' (optional)'}`}
+                      placeholder={idx < 2 ? '(required)' : '(optional)'}
                       className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
                     />
                   ))}
@@ -468,7 +481,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                   <span className={`text-lg font-semibold ${textClass} w-20`}>{daysUntilEnd} days</span>
                 </div>
                 <p className={`text-xs ${mutedClass} mt-1`}>
-                  Ends: {new Date(Date.now() + daysUntilEnd * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                  Ends: {endDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} at 8:55 AM CST
                 </p>
               </div>
 
