@@ -2090,46 +2090,46 @@ export default function App() {
   return (
     <div className={`min-h-screen ${bgClass} p-4`}>
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className={`${cardClass} border rounded-sm p-4 mb-4`}>
-          <div className="flex flex-wrap justify-between items-center gap-4">
-            <div className="flex items-center gap-2">
-              <img 
-                src="/stockism logo.png" 
-                alt="Stockism" 
-                className="h-[60px] sm:h-[70px] md:h-[80px] w-auto"
-              />
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={() => setShowLeaderboard(true)}
+        {/* Logo */}
+        <div className="flex justify-center mb-4">
+          <img 
+            src="/stockism logo.png" 
+            alt="Stockism" 
+            className="h-[50px] sm:h-[70px] md:h-[90px] w-auto"
+          />
+        </div>
+
+        {/* Nav Bar */}
+        <div className={`${cardClass} border rounded-sm p-3 mb-4`}>
+          <div className="flex flex-wrap justify-center sm:justify-end items-center gap-2">
+            <button onClick={() => setShowLeaderboard(true)}
+              className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
+              🏆 Leaderboard
+            </button>
+            {user && ADMIN_UIDS.includes(user.uid) && (
+              <button onClick={() => setShowAdmin(true)}
                 className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
-                🏆 Leaderboard
+                🔧 Admin
               </button>
-              {user && ADMIN_UIDS.includes(user.uid) && (
-                <button onClick={() => setShowAdmin(true)}
-                  className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
-                  🔧 Admin
-                </button>
-              )}
-              <button onClick={() => setDarkMode(!darkMode)}
-                className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
-                {darkMode ? '☀️' : '🌙'}
+            )}
+            <button onClick={() => setDarkMode(!darkMode)}
+              className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
+              {darkMode ? '☀️' : '🌙'}
+            </button>
+            {isGuest ? (
+              <button onClick={() => setShowLoginModal(true)}
+                className="px-3 py-1 text-xs rounded-sm bg-teal-600 hover:bg-teal-700 text-white font-semibold uppercase">
+                Sign In
               </button>
-              {isGuest ? (
-                <button onClick={() => setShowLoginModal(true)}
-                  className="px-3 py-1 text-xs rounded-sm bg-teal-600 hover:bg-teal-700 text-white font-semibold uppercase">
-                  Sign In
+            ) : (
+              <>
+                <span className={`text-sm ${mutedClass}`}>{userData?.displayName}</span>
+                <button onClick={handleLogout}
+                  className="px-3 py-1 text-xs rounded-sm bg-red-600 hover:bg-red-700 text-white font-semibold uppercase">
+                  Logout
                 </button>
-              ) : (
-                <>
-                  <span className={`text-sm ${mutedClass}`}>{userData?.displayName}</span>
-                  <button onClick={handleLogout}
-                    className="px-3 py-1 text-xs rounded-sm bg-red-600 hover:bg-red-700 text-white font-semibold uppercase">
-                    Logout
-                  </button>
-                </>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
 
