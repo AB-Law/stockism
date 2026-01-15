@@ -1617,7 +1617,7 @@ const AchievementsModal = ({ onClose, darkMode, userData }) => {
               <p className={`text-sm ${mutedClass}`}>
                 Credit limit: <span className="text-green-500 font-semibold">${lendingStatus.creditLimit.toLocaleString()}</span>
                 <br />
-                <span className="text-yellow-500 text-xs">⚠️ Coming soon - lending is not yet active</span>
+                <span className="text-teal-500 text-xs">Click the 🏦 Lending button in the nav bar to borrow!</span>
               </p>
             ) : (
               <div className="space-y-1">
@@ -1678,8 +1678,241 @@ const AchievementsModal = ({ onClose, darkMode, userData }) => {
 };
 
 // ============================================
-// CHECK-IN BUTTON WITH TIMER
+// LENDING MODAL
 // ============================================
+
+const LOAN_INTEREST_RATE = 0.05; // 5% per day
+const LOAN_MAX_DAYS = 7;
+const LOAN_MIN_AMOUNT = 100;
+
+const LendingModal = ({ onClose, darkMode, userData, onBorrow, onRepay }) => {
+  const [borrowAmount, setBorrowAmount] = useState(500);
+  const [repayAmount, setRepayAmount] = useState(0);
+  
+  const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+  const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
+  const mutedClass = darkMode ? 'text-slate-400' : 'text-slate-600';
+  
+  const lendingStatus = checkLendingEligibility(userData);
+  const activeLoan = userData?.activeLoan || null;
+  
+  // Calculate loan details if active
+  const loanDetails = useMemo(() => {
+    if (!activeLoan) return null;
+    
+    const now = Date.now();
+    const daysPassed = (now - activeLoan.borrowedAt) / (1000 * 60 * 60 * 24);
+    const interest = activeLoan.principal * LOAN_INTEREST_RATE * daysPassed;
+    const totalOwed = activeLoan.principal + interest;
+    const daysRemaining = LOAN_MAX_DAYS - daysPassed;
+    const isOverdue = daysRemaining <= 0;
+    
+    return {
+      principal: activeLoan.principal,
+      interest: Math.round(interest * 100) / 100,
+      totalOwed: Math.round(totalOwed * 100) / 100,
+      daysPassed: Math.floor(daysPassed),
+      daysRemaining: Math.max(0, Math.ceil(daysRemaining)),
+      isOverdue
+    };
+  }, [activeLoan]);
+  
+  // Set default repay amount to total owed
+  useEffect(() => {
+    if (loanDetails) {
+      setRepayAmount(loanDetails.totalOwed);
+    }
+  }, [loanDetails]);
+  
+  const handleBorrow = () => {
+    if (borrowAmount >= LOAN_MIN_AMOUNT && borrowAmount <= lendingStatus.creditLimit) {
+      onBorrow(borrowAmount);
+    }
+  };
+  
+  const handleRepay = () => {
+    if (repayAmount > 0 && repayAmount <= (userData?.cash || 0)) {
+      onRepay(Math.min(repayAmount, loanDetails?.totalOwed || 0));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div 
+        className={`w-full max-w-md ${cardClass} border rounded-sm shadow-xl overflow-hidden`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'} flex justify-between items-center`}>
+          <div>
+            <h2 className={`text-xl font-bold ${textClass}`}>🏦 Lending</h2>
+            <p className={`text-sm ${mutedClass}`}>Borrow cash to trade with</p>
+          </div>
+          <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {!lendingStatus.eligible ? (
+            // Locked state
+            <div className={`p-4 rounded-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-100'}`}>
+              <h3 className={`font-semibold mb-2 ${textClass}`}>🔒 Lending Locked</h3>
+              <p className={`text-sm ${mutedClass} mb-3`}>Meet these requirements to unlock:</p>
+              <div className="space-y-1">
+                {lendingStatus.requirements.map((req, i) => (
+                  <div key={i} className={`text-sm flex items-center gap-2 ${req.met ? 'text-green-500' : mutedClass}`}>
+                    <span>{req.met ? '✓' : '○'}</span>
+                    <span>{req.label}</span>
+                    {!req.met && <span className="text-xs">({req.current}/{req.required})</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : activeLoan ? (
+            // Active loan - repayment UI
+            <div className="space-y-4">
+              <div className={`p-4 rounded-sm ${loanDetails?.isOverdue 
+                ? (darkMode ? 'bg-red-900/30 border border-red-700' : 'bg-red-50 border border-red-200')
+                : (darkMode ? 'bg-amber-900/30 border border-amber-700' : 'bg-amber-50 border border-amber-200')
+              }`}>
+                <h3 className={`font-semibold mb-2 ${loanDetails?.isOverdue ? 'text-red-500' : 'text-amber-500'}`}>
+                  {loanDetails?.isOverdue ? '⚠️ LOAN OVERDUE!' : '📋 Active Loan'}
+                </h3>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className={mutedClass}>Principal:</span>
+                    <span className={textClass}>{formatCurrency(loanDetails?.principal || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={mutedClass}>Interest accrued:</span>
+                    <span className="text-red-500">+{formatCurrency(loanDetails?.interest || 0)}</span>
+                  </div>
+                  <div className={`flex justify-between font-bold pt-1 border-t ${darkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                    <span className={textClass}>Total owed:</span>
+                    <span className="text-amber-500">{formatCurrency(loanDetails?.totalOwed || 0)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2">
+                    <span className={mutedClass}>Time remaining:</span>
+                    <span className={loanDetails?.isOverdue ? 'text-red-500 font-bold' : 'text-teal-500'}>
+                      {loanDetails?.isOverdue ? 'OVERDUE' : `${loanDetails?.daysRemaining} days`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {loanDetails?.isOverdue && (
+                <div className={`p-3 rounded-sm text-sm ${darkMode ? 'bg-red-900/20' : 'bg-red-50'} text-red-500`}>
+                  ⚠️ Your loan is overdue! Repay immediately to avoid account restrictions.
+                </div>
+              )}
+              
+              <div>
+                <label className={`text-sm font-semibold ${textClass} block mb-2`}>Repay Amount</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.min(userData?.cash || 0, loanDetails?.totalOwed || 0)}
+                    value={repayAmount}
+                    onChange={(e) => setRepayAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className={`flex-1 px-3 py-2 rounded-sm border ${
+                      darkMode ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-white border-slate-300'
+                    }`}
+                  />
+                  <button
+                    onClick={() => setRepayAmount(Math.min(userData?.cash || 0, loanDetails?.totalOwed || 0))}
+                    className={`px-3 py-2 text-xs font-semibold rounded-sm ${
+                      darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Max
+                  </button>
+                </div>
+                <p className={`text-xs ${mutedClass} mt-1`}>
+                  Your cash: {formatCurrency(userData?.cash || 0)}
+                </p>
+              </div>
+              
+              <button
+                onClick={handleRepay}
+                disabled={repayAmount <= 0 || repayAmount > (userData?.cash || 0)}
+                className={`w-full py-3 font-semibold rounded-sm ${
+                  repayAmount > 0 && repayAmount <= (userData?.cash || 0)
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : 'bg-slate-500 cursor-not-allowed text-slate-300'
+                }`}
+              >
+                Repay {formatCurrency(repayAmount)}
+              </button>
+            </div>
+          ) : (
+            // No active loan - borrow UI
+            <div className="space-y-4">
+              <div className={`p-4 rounded-sm ${darkMode ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200'}`}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className={`font-semibold ${textClass}`}>Credit Limit</span>
+                  <span className="text-green-500 font-bold text-lg">{formatCurrency(lendingStatus.creditLimit)}</span>
+                </div>
+                <p className={`text-xs ${mutedClass}`}>
+                  Based on your achievements and trading history
+                </p>
+              </div>
+              
+              <div className={`p-3 rounded-sm text-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-100'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span>📊</span>
+                  <span className={`font-semibold ${textClass}`}>Loan Terms</span>
+                </div>
+                <ul className={`text-xs ${mutedClass} space-y-1`}>
+                  <li>• Interest rate: <span className="text-amber-500">5% per day</span></li>
+                  <li>• Maximum term: <span className="text-teal-500">7 days</span></li>
+                  <li>• Minimum loan: <span className="text-teal-500">{formatCurrency(LOAN_MIN_AMOUNT)}</span></li>
+                  <li>• Overdue loans may result in account restrictions</li>
+                </ul>
+              </div>
+              
+              <div>
+                <label className={`text-sm font-semibold ${textClass} block mb-2`}>Borrow Amount</label>
+                <input
+                  type="range"
+                  min={LOAN_MIN_AMOUNT}
+                  max={lendingStatus.creditLimit}
+                  step={50}
+                  value={borrowAmount}
+                  onChange={(e) => setBorrowAmount(parseInt(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between mt-1">
+                  <span className={`text-xs ${mutedClass}`}>{formatCurrency(LOAN_MIN_AMOUNT)}</span>
+                  <span className={`text-lg font-bold ${textClass}`}>{formatCurrency(borrowAmount)}</span>
+                  <span className={`text-xs ${mutedClass}`}>{formatCurrency(lendingStatus.creditLimit)}</span>
+                </div>
+              </div>
+              
+              <div className={`p-3 rounded-sm ${darkMode ? 'bg-slate-700/30' : 'bg-slate-50'}`}>
+                <div className="text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className={mutedClass}>If repaid in 1 day:</span>
+                    <span className={textClass}>{formatCurrency(borrowAmount * 1.05)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={mutedClass}>If repaid in 7 days:</span>
+                    <span className="text-amber-500">{formatCurrency(borrowAmount * 1.35)}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <button
+                onClick={handleBorrow}
+                className="w-full py-3 font-semibold rounded-sm bg-teal-600 hover:bg-teal-700 text-white"
+              >
+                Borrow {formatCurrency(borrowAmount)}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const CheckInButton = ({ isGuest, lastCheckin, onCheckin, darkMode }) => {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -2226,6 +2459,7 @@ export default function App() {
   const [showPortfolio, setShowPortfolio] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
+  const [showLending, setShowLending] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [notification, setNotification] = useState(null);
   const [needsUsername, setNeedsUsername] = useState(false);
@@ -3153,6 +3387,78 @@ export default function App() {
   // Logout
   const handleLogout = () => signOut(auth);
 
+  // Borrow money
+  const handleBorrow = useCallback(async (amount) => {
+    if (!user || !userData) return;
+    
+    const lendingStatus = checkLendingEligibility(userData);
+    if (!lendingStatus.eligible || amount > lendingStatus.creditLimit) {
+      setNotification({ type: 'error', message: 'Not eligible to borrow this amount!' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    
+    if (userData.activeLoan) {
+      setNotification({ type: 'error', message: 'You already have an active loan!' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    
+    const userRef = doc(db, 'users', user.uid);
+    await updateDoc(userRef, {
+      cash: userData.cash + amount,
+      activeLoan: {
+        principal: amount,
+        borrowedAt: Date.now()
+      },
+      lendingUnlocked: true
+    });
+    
+    setNotification({ type: 'success', message: `Borrowed ${formatCurrency(amount)}! Remember to repay within 7 days.` });
+    setTimeout(() => setNotification(null), 5000);
+    setShowLending(false);
+  }, [user, userData]);
+
+  // Repay loan
+  const handleRepay = useCallback(async (amount) => {
+    if (!user || !userData || !userData.activeLoan) return;
+    
+    const now = Date.now();
+    const daysPassed = (now - userData.activeLoan.borrowedAt) / (1000 * 60 * 60 * 24);
+    const interest = userData.activeLoan.principal * 0.05 * daysPassed; // 5% per day
+    const totalOwed = userData.activeLoan.principal + interest;
+    
+    if (amount > userData.cash) {
+      setNotification({ type: 'error', message: 'Insufficient funds!' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    
+    const userRef = doc(db, 'users', user.uid);
+    
+    if (amount >= totalOwed) {
+      // Full repayment
+      await updateDoc(userRef, {
+        cash: userData.cash - totalOwed,
+        activeLoan: null
+      });
+      setNotification({ type: 'success', message: `Loan repaid in full! Paid ${formatCurrency(totalOwed)}` });
+      setShowLending(false);
+    } else {
+      // Partial repayment - reduce principal
+      const remainingOwed = totalOwed - amount;
+      await updateDoc(userRef, {
+        cash: userData.cash - amount,
+        activeLoan: {
+          principal: remainingOwed,
+          borrowedAt: Date.now() // Reset timer for remaining amount
+        }
+      });
+      setNotification({ type: 'success', message: `Paid ${formatCurrency(amount)}. Remaining: ${formatCurrency(remainingOwed)}` });
+    }
+    setTimeout(() => setNotification(null), 5000);
+  }, [user, userData]);
+
   // Guest data
   const guestData = { cash: STARTING_CASH, holdings: {}, shorts: {}, bets: {}, portfolioValue: STARTING_CASH };
   const activeUserData = userData || guestData;
@@ -3227,6 +3533,16 @@ export default function App() {
               <button onClick={() => setShowAchievements(true)}
                 className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
                 🎯 Achievements
+              </button>
+            )}
+            {!isGuest && (
+              <button onClick={() => setShowLending(true)}
+                className={`px-3 py-1 text-xs rounded-sm border ${
+                  userData?.activeLoan 
+                    ? 'border-amber-500 text-amber-500 hover:bg-amber-900/20' 
+                    : darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'
+                }`}>
+                🏦 {userData?.activeLoan ? 'Loan Active' : 'Lending'}
               </button>
             )}
             {user && ADMIN_UIDS.includes(user.uid) && (
@@ -3423,6 +3739,15 @@ export default function App() {
           onClose={() => setShowAchievements(false)} 
           darkMode={darkMode} 
           userData={userData}
+        />
+      )}
+      {showLending && !isGuest && (
+        <LendingModal 
+          onClose={() => setShowLending(false)} 
+          darkMode={darkMode} 
+          userData={userData}
+          onBorrow={handleBorrow}
+          onRepay={handleRepay}
         />
       )}
       {showAdmin && (
