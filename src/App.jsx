@@ -1678,7 +1678,7 @@ const PinDisplay = ({ userData, size = 'sm' }) => {
 // CREW SELECTION MODAL
 // ============================================
 
-const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, isInitialSelection = false }) => {
+const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) => {
   const [selectedCrew, setSelectedCrew] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const [leavingCrew, setLeavingCrew] = useState(false);
@@ -1698,8 +1698,8 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
   };
   
   const handleConfirm = () => {
-    // Pass true if switching crews (has existing crew), false if initial selection
-    onSelect(selectedCrew, !isInitialSelection && currentCrew);
+    // Pass true if switching crews (has existing crew), false if joining fresh
+    onSelect(selectedCrew, !!currentCrew);
     onClose();
   };
 
@@ -1709,33 +1709,29 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
   };
   
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={isInitialSelection ? undefined : onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className={`w-full max-w-2xl ${cardClass} border rounded-sm shadow-xl overflow-hidden max-h-[90vh] flex flex-col`}
         onClick={e => e.stopPropagation()}>
         
         <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <div className="flex justify-between items-center">
-            <h2 className={`text-lg font-semibold ${textClass}`}>
-              {isInitialSelection ? '🏴 Choose Your Crew' : '🏴 Crew'}
-            </h2>
-            {!isInitialSelection && (
-              <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
-            )}
+            <h2 className={`text-lg font-semibold ${textClass}`}>🏴 Crew</h2>
+            <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
           </div>
-          {!isInitialSelection && currentCrew && (
+          {currentCrew && (
             <p className={`text-sm ${mutedClass} mt-1`}>
               Current: <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.emblem} {CREW_MAP[currentCrew]?.name}</span>
             </p>
           )}
-          {isInitialSelection && (
+          {!currentCrew && (
             <p className={`text-sm ${mutedClass} mt-1`}>
               Join a crew to unlock daily missions, crew dividends, and compete for Crew Head!
             </p>
           )}
         </div>
 
-        {/* Warning Banner for switching/leaving */}
-        {!isInitialSelection && currentCrew && !confirming && !leavingCrew && (
+        {/* Warning Banner for switching/leaving - only show if user has a crew */}
+        {currentCrew && !confirming && !leavingCrew && (
           <div className={`p-3 ${darkMode ? 'bg-red-900/30' : 'bg-red-100'} border-b border-red-500/30`}>
             <p className="text-red-400 text-sm text-center">
               ⚠️ <strong>Warning:</strong> Leaving or switching crews costs <strong>50% of your entire portfolio</strong> (~{formatCurrency(penaltyAmount)})
@@ -1757,7 +1753,7 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
                 Half of your cash and half of each stock you own will be taken.
               </p>
             </div>
-            <p className={`text-sm ${mutedClass} mb-6`}>You can rejoin any crew later (for another 50% penalty).</p>
+            <p className={`text-sm ${mutedClass} mb-6`}>You can rejoin any crew later (no cost to join).</p>
             
             <div className="flex gap-3 justify-center">
               <button
@@ -1778,10 +1774,10 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
           <div className="p-6 text-center">
             <div className="text-4xl mb-4">{CREW_MAP[selectedCrew]?.emblem}</div>
             <h3 className={`text-xl font-bold mb-2 ${textClass}`} style={{ color: CREW_MAP[selectedCrew]?.color }}>
-              {isInitialSelection || !currentCrew ? `Join ${CREW_MAP[selectedCrew]?.name}?` : `Switch to ${CREW_MAP[selectedCrew]?.name}?`}
+              {currentCrew ? `Switch to ${CREW_MAP[selectedCrew]?.name}?` : `Join ${CREW_MAP[selectedCrew]?.name}?`}
             </h3>
             
-            {!isInitialSelection && currentCrew && (
+            {currentCrew ? (
               <div className={`p-4 rounded-sm ${darkMode ? 'bg-red-900/20' : 'bg-red-50'} border border-red-500/30 mb-4`}>
                 <p className="text-red-400 font-semibold mb-2">
                   You will lose approximately {formatCurrency(penaltyAmount)}
@@ -1790,11 +1786,9 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
                   Half of your cash and half of each stock you own will be taken.
                 </p>
               </div>
-            )}
-
-            {isInitialSelection && (
+            ) : (
               <p className={`text-sm ${mutedClass} mb-4`}>
-                Your first crew is free to join!
+                Joining a crew is free!
               </p>
             )}
             
@@ -1809,14 +1803,14 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
                 onClick={handleConfirm}
                 className="px-6 py-2 rounded-sm bg-teal-600 hover:bg-teal-700 text-white font-semibold"
               >
-                {isInitialSelection ? 'Join Crew' : 'Confirm Switch'}
+                {currentCrew ? 'Confirm Switch' : 'Join Crew'}
               </button>
             </div>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-4">
             {/* Leave Crew Button */}
-            {!isInitialSelection && currentCrew && (
+            {currentCrew && (
               <button
                 onClick={() => setLeavingCrew(true)}
                 className={`w-full mb-4 p-3 rounded-sm border-2 border-red-500/50 text-red-400 hover:bg-red-500/10 transition-all`}
@@ -3021,7 +3015,6 @@ export default function App() {
   const [showLending, setShowLending] = useState(false);
   const [showCrewSelection, setShowCrewSelection] = useState(false);
   const [showPinShop, setShowPinShop] = useState(false);
-  const [needsCrewSelection, setNeedsCrewSelection] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [notification, setNotification] = useState(null);
   const [needsUsername, setNeedsUsername] = useState(false);
@@ -3050,11 +3043,6 @@ export default function App() {
           const data = userSnap.data();
           setUserData(data);
           
-          // Check if user needs to select a crew
-          if (!data.crew) {
-            setNeedsCrewSelection(true);
-          }
-          
           // Subscribe to user data changes
           onSnapshot(userDocRef, (snap) => {
             if (snap.exists()) setUserData(snap.data());
@@ -3063,7 +3051,6 @@ export default function App() {
       } else {
         setUserData(null);
         setNeedsUsername(false);
-        setNeedsCrewSelection(false);
       }
       setLoading(false);
     });
@@ -3380,7 +3367,7 @@ export default function App() {
         crewJoinedAt: Date.now()
       };
       
-      // If switching crews (not initial selection), take 50% penalty
+      // Only charge penalty if LEAVING a crew to join another (switching)
       if (isSwitch && userData.crew) {
         // Take half of cash and half of each holding
         const newCash = Math.floor(userData.cash / 2);
@@ -3406,16 +3393,14 @@ export default function App() {
         
         const crew = CREW_MAP[crewId];
         await updateDoc(userRef, updateData);
-        setNeedsCrewSelection(false);
         
         setNotification({ 
           type: 'success', 
           message: `Switched to ${crew.name}! Lost ${formatCurrency(totalTaken)} (50% penalty)`
         });
       } else {
-        // Initial selection - no cost
+        // Joining a crew (no existing crew) - no cost
         await updateDoc(userRef, updateData);
-        setNeedsCrewSelection(false);
         
         const crew = CREW_MAP[crewId];
         setNotification({ 
@@ -4531,14 +4516,13 @@ export default function App() {
           onRepay={handleRepay}
         />
       )}
-      {(showCrewSelection || needsCrewSelection) && !isGuest && (
+      {showCrewSelection && !isGuest && (
         <CrewSelectionModal
-          onClose={() => { setShowCrewSelection(false); if (!userData?.crew) setNeedsCrewSelection(false); }}
+          onClose={() => setShowCrewSelection(false)}
           onSelect={handleCrewSelect}
           onLeave={handleCrewLeave}
           darkMode={darkMode}
           userData={userData}
-          isInitialSelection={needsCrewSelection && !userData?.crew}
         />
       )}
       {showPinShop && !isGuest && (
