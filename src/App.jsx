@@ -3511,6 +3511,8 @@ export default function App() {
       case 'price-low': filtered.sort((a, b) => (prices[a.ticker] || a.basePrice) - (prices[b.ticker] || b.basePrice)); break;
       case 'active': filtered.sort((a, b) => Math.abs(priceChanges[b.ticker]) - Math.abs(priceChanges[a.ticker])); break;
       case 'ticker': filtered.sort((a, b) => a.ticker.localeCompare(b.ticker)); break;
+      case 'newest': filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded)); break;
+      case 'oldest': filtered.sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded)); break;
     }
     return filtered;
   }, [searchQuery, sortBy, prices]);
@@ -3675,6 +3677,8 @@ export default function App() {
               <option value="price-low">Price: Low</option>
               <option value="active">Most Active</option>
               <option value="ticker">Ticker A-Z</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
             </select>
             <input type="text" placeholder="Search..." value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
