@@ -1778,7 +1778,7 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, is
           <div className="p-6 text-center">
             <div className="text-4xl mb-4">{CREW_MAP[selectedCrew]?.emblem}</div>
             <h3 className={`text-xl font-bold mb-2 ${textClass}`} style={{ color: CREW_MAP[selectedCrew]?.color }}>
-              {isInitialSelection ? `Join ${CREW_MAP[selectedCrew]?.name}?` : `Switch to ${CREW_MAP[selectedCrew]?.name}?`}
+              {isInitialSelection || !currentCrew ? `Join ${CREW_MAP[selectedCrew]?.name}?` : `Switch to ${CREW_MAP[selectedCrew]?.name}?`}
             </h3>
             
             {!isInitialSelection && currentCrew && (
