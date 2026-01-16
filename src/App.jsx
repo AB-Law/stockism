@@ -752,6 +752,80 @@ const ChartModal = ({ character, currentPrice, priceHistory, onClose, darkMode }
 };
 
 // ============================================
+// NEW CHARACTERS BOARD COMPONENT
+// ============================================
+
+// Helper to get the start of the current prediction week (Wednesday)
+const getWeekStart = () => {
+  const now = new Date();
+  const day = now.getDay();
+  // Wednesday = 3, so we need to go back to the most recent Wednesday
+  const daysToSubtract = (day + 4) % 7; // Days since last Wednesday
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - daysToSubtract);
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+};
+
+const NewCharactersBoard = ({ prices, priceHistory, darkMode }) => {
+  const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+  const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
+  const mutedClass = darkMode ? 'text-slate-400' : 'text-slate-500';
+  
+  const weekStart = getWeekStart();
+  
+  // Find characters added this week
+  const newCharacters = CHARACTERS.filter(char => {
+    const addedDate = new Date(char.dateAdded);
+    return addedDate >= weekStart;
+  }).sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded));
+  
+  if (newCharacters.length === 0) return null;
+  
+  // Calculate weekly change for each new character
+  const getWeeklyChange = (ticker) => {
+    const currentPrice = prices[ticker];
+    const history = priceHistory[ticker] || [];
+    
+    if (!currentPrice || history.length === 0) return 0;
+    
+    // Find price from start of week
+    const weekStartTime = weekStart.getTime();
+    const startPrice = history.find(h => h.timestamp >= weekStartTime)?.price || history[0]?.price || currentPrice;
+    
+    return ((currentPrice - startPrice) / startPrice) * 100;
+  };
+  
+  return (
+    <div className={`${cardClass} border rounded-sm p-3`}>
+      <h3 className={`text-xs font-semibold uppercase tracking-wide mb-2 ${mutedClass}`}>
+        🆕 New This Week ({newCharacters.length})
+      </h3>
+      <div className="max-h-48 overflow-y-auto space-y-1">
+        {newCharacters.map(char => {
+          const price = prices[char.ticker] || char.basePrice;
+          const change = getWeeklyChange(char.ticker);
+          return (
+            <div key={char.ticker} className={`flex items-center justify-between py-1 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'} last:border-0`}>
+              <div className="min-w-0 flex-1">
+                <span className={`text-sm font-semibold ${textClass}`}>{char.name}</span>
+                <span className={`text-xs ${mutedClass} ml-1`}>${char.ticker}</span>
+              </div>
+              <div className="text-right ml-2">
+                <span className={`text-sm font-bold ${textClass}`}>${price.toFixed(2)}</span>
+                <span className={`text-xs ml-1 ${change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {change >= 0 ? '▲' : '▼'}{Math.abs(change).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // PREDICTION CARD COMPONENT (Multi-Option with Auto-Payout)
 // ============================================
 
@@ -4648,24 +4722,36 @@ export default function App() {
           </div>
         )}
 
-        {/* Weekly Predictions */}
-        {predictions.length > 0 && (
-          <div className="mb-4">
-            <h2 className={`text-sm font-semibold uppercase tracking-wide mb-3 ${mutedClass}`}>🔮 Weekly Predictions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {predictions.filter(p => !p.resolved || Date.now() - p.endsAt < 7 * 24 * 60 * 60 * 1000).map(prediction => (
-                <PredictionCard
-                  key={prediction.id}
-                  prediction={prediction}
-                  userBet={getUserBet(prediction.id)}
-                  onBet={handleBet}
-                  darkMode={darkMode}
-                  isGuest={isGuest}
-                />
-              ))}
+        {/* Weekly Predictions & New Characters */}
+        <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Predictions - takes 2 columns */}
+          {predictions.length > 0 && (
+            <div className="lg:col-span-2">
+              <h2 className={`text-sm font-semibold uppercase tracking-wide mb-3 ${mutedClass}`}>🔮 Weekly Predictions</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {predictions.filter(p => !p.resolved || Date.now() - p.endsAt < 7 * 24 * 60 * 60 * 1000).map(prediction => (
+                  <PredictionCard
+                    key={prediction.id}
+                    prediction={prediction}
+                    userBet={getUserBet(prediction.id)}
+                    onBet={handleBet}
+                    darkMode={darkMode}
+                    isGuest={isGuest}
+                  />
+                ))}
+              </div>
             </div>
+          )}
+          
+          {/* New Characters Board - takes 1 column */}
+          <div className={predictions.length === 0 ? 'lg:col-span-3' : ''}>
+            <NewCharactersBoard 
+              prices={prices} 
+              priceHistory={priceHistory}
+              darkMode={darkMode} 
+            />
           </div>
-        )}
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
