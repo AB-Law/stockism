@@ -3350,7 +3350,13 @@ export default function App() {
     const unsubscribe = onSnapshot(marketRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setPrices(data.prices || {});
+        // Merge stored prices with basePrices for any new characters
+        const storedPrices = data.prices || {};
+        const mergedPrices = {};
+        CHARACTERS.forEach(c => {
+          mergedPrices[c.ticker] = storedPrices[c.ticker] ?? c.basePrice;
+        });
+        setPrices(mergedPrices);
         setPriceHistory(data.priceHistory || {});
         setMarketData(data);
       } else {
@@ -3882,13 +3888,13 @@ export default function App() {
       return;
     }
 
-    const price = prices[ticker];
+    const asset = CHARACTER_MAP[ticker];
+    const price = prices[ticker] || asset?.basePrice;
     if (!price || isNaN(price)) {
       setNotification({ type: 'error', message: 'Price unavailable, try again' });
       setTimeout(() => setNotification(null), 3000);
       return;
     }
-    const asset = CHARACTER_MAP[ticker];
     const basePrice = asset?.basePrice || price;
     const userRef = doc(db, 'users', user.uid);
     const marketRef = doc(db, 'market', 'current');
