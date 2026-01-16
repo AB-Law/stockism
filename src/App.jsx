@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore';
 import { auth, googleProvider, db } from './firebase';
 import { CHARACTERS, CHARACTER_MAP } from './characters';
+import { CREWS, CREW_MAP, SHOP_PINS, SHOP_PINS_LIST, DAILY_MISSIONS, PIN_SLOT_COSTS, CREW_DIVIDEND_RATE } from './crews';
 import AdminPanel from './AdminPanel';
 
 // ============================================
@@ -1260,9 +1261,10 @@ const PortfolioModal = ({ holdings, prices, portfolioHistory, currentValue, onCl
 // LEADERBOARD MODAL
 // ============================================
 
-const LeaderboardModal = ({ onClose, darkMode }) => {
+const LeaderboardModal = ({ onClose, darkMode, currentUserCrew }) => {
   const [leaders, setLeaders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [crewFilter, setCrewFilter] = useState('ALL'); // 'ALL' or crew ID
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
@@ -1270,7 +1272,7 @@ const LeaderboardModal = ({ onClose, darkMode }) => {
         const q = query(
           collection(db, 'users'),
           orderBy('portfolioValue', 'desc'),
-          limit(50)
+          limit(100)
         );
         const snapshot = await getDocs(q);
         const leaderData = snapshot.docs.map((doc, index) => ({
@@ -1305,46 +1307,92 @@ const LeaderboardModal = ({ onClose, darkMode }) => {
     return `#${rank}`;
   };
 
+  // Filter and re-rank based on crew
+  const filteredLeaders = useMemo(() => {
+    if (crewFilter === 'ALL') return leaders;
+    return leaders
+      .filter(l => l.crew === crewFilter)
+      .map((l, idx) => ({ ...l, crewRank: idx + 1 }));
+  }, [leaders, crewFilter]);
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className={`w-full max-w-lg ${cardClass} border rounded-sm shadow-xl overflow-hidden max-h-[80vh] flex flex-col`}
         onClick={e => e.stopPropagation()}>
         
         <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mb-3">
             <h2 className={`text-lg font-semibold ${textClass}`}>🏆 Leaderboard</h2>
             <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
+          </div>
+          
+          {/* Crew Filter */}
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setCrewFilter('ALL')}
+              className={`px-3 py-1 text-xs rounded-sm font-semibold ${
+                crewFilter === 'ALL' 
+                  ? 'bg-teal-600 text-white' 
+                  : darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+              }`}
+            >
+              All
+            </button>
+            {Object.values(CREWS).map(crew => (
+              <button
+                key={crew.id}
+                onClick={() => setCrewFilter(crew.id)}
+                className={`px-3 py-1 text-xs rounded-sm font-semibold ${
+                  crewFilter === crew.id 
+                    ? 'text-white' 
+                    : darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+                }`}
+                style={crewFilter === crew.id ? { backgroundColor: crew.color } : {}}
+              >
+                {crew.emblem} {crew.name}
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className={`text-center py-8 ${mutedClass}`}>Loading...</div>
-          ) : leaders.length === 0 ? (
+          ) : filteredLeaders.length === 0 ? (
             <div className={`text-center py-8 ${mutedClass}`}>
-              <p>No traders yet!</p>
+              <p>No traders{crewFilter !== 'ALL' ? ' in this crew' : ''} yet!</p>
               <p className="text-sm">Be the first to make your mark.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-700">
-              {leaders.map(leader => (
-                <div key={leader.id} className={`p-3 flex items-center gap-3 ${leader.rank <= 3 ? (darkMode ? 'bg-slate-800/50' : 'bg-slate-50') : ''}`}>
-                  <div className={`w-10 text-center font-bold ${getRankStyle(leader.rank)}`}>
-                    {getRankEmoji(leader.rank)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-semibold truncate ${textClass}`}>
-                      {leader.displayName || 'Anonymous Trader'}
+              {filteredLeaders.map(leader => {
+                const displayRank = crewFilter === 'ALL' ? leader.rank : leader.crewRank;
+                const crew = leader.crew ? CREW_MAP[leader.crew] : null;
+                return (
+                  <div key={leader.id} className={`p-3 flex items-center gap-3 ${displayRank <= 3 ? (darkMode ? 'bg-slate-800/50' : 'bg-slate-50') : ''}`}>
+                    <div className={`w-10 text-center font-bold ${getRankStyle(displayRank)}`}>
+                      {getRankEmoji(displayRank)}
                     </div>
-                    <div className={`text-xs ${mutedClass}`}>
-                      {Object.keys(leader.holdings || {}).filter(k => leader.holdings[k] > 0).length} characters
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-semibold truncate ${textClass} flex items-center`}>
+                        <span style={leader.isCrewHead && crew ? { color: leader.crewHeadColor || crew.color } : {}}>
+                          {leader.displayName || 'Anonymous Trader'}
+                        </span>
+                        <PinDisplay userData={leader} size="sm" />
+                      </div>
+                      <div className={`text-xs ${mutedClass} flex items-center gap-2`}>
+                        {crew && (
+                          <span style={{ color: crew.color }}>{crew.emblem} {crew.name}</span>
+                        )}
+                        <span>{Object.keys(leader.holdings || {}).filter(k => leader.holdings[k] > 0).length} characters</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-bold ${textClass}`}>{formatCurrency(leader.portfolioValue || 0)}</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className={`font-bold ${textClass}`}>{formatCurrency(leader.portfolioValue || 0)}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1559,6 +1607,419 @@ const AboutModal = ({ onClose, darkMode }) => {
                   Last updated: January 2025. This is a fan project with no legal entity behind it. 
                   If you have privacy concerns, please reach out to us directly.
                 </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}};
+
+// ============================================
+// PIN DISPLAY COMPONENT
+// ============================================
+
+const PinDisplay = ({ userData, size = 'sm' }) => {
+  if (!userData) return null;
+  
+  const pins = [];
+  const sizeClass = size === 'sm' ? 'text-xs' : size === 'md' ? 'text-sm' : 'text-base';
+  
+  // Crew pin
+  if (userData.crew) {
+    const crew = CREW_MAP[userData.crew];
+    if (crew) {
+      const isCrewHead = userData.isCrewHead;
+      pins.push(
+        <span key="crew" title={`${crew.name}${isCrewHead ? ' (Crew Head)' : ''}`} className={sizeClass}>
+          {isCrewHead ? '👑' : crew.emblem}
+        </span>
+      );
+    }
+  }
+  
+  // Achievement pins
+  const achievementPins = userData.displayedAchievementPins || [];
+  achievementPins.forEach((achId, idx) => {
+    const achievement = ACHIEVEMENTS[achId];
+    if (achievement) {
+      pins.push(
+        <span key={`ach-${idx}`} title={achievement.name} className={sizeClass}>
+          {achievement.emoji}
+        </span>
+      );
+    }
+  });
+  
+  // Shop pins
+  const shopPins = userData.displayedShopPins || [];
+  shopPins.forEach((pinId, idx) => {
+    const pin = SHOP_PINS[pinId];
+    if (pin) {
+      pins.push(
+        <span key={`shop-${idx}`} title={pin.name} className={sizeClass}>
+          {pin.emoji}
+        </span>
+      );
+    }
+  });
+  
+  if (pins.length === 0) return null;
+  
+  return <span className="inline-flex gap-0.5 ml-1">{pins}</span>;
+};
+
+// ============================================
+// CREW SELECTION MODAL
+// ============================================
+
+const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSelection = false }) => {
+  const [selectedCrew, setSelectedCrew] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  
+  const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+  const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
+  const mutedClass = darkMode ? 'text-slate-400' : 'text-slate-500';
+  
+  const currentCrew = userData?.crew;
+  const portfolioValue = userData?.portfolioValue || 0;
+  const switchCost = Math.floor(portfolioValue * 0.5);
+  
+  const handleSelect = (crewId) => {
+    if (crewId === currentCrew) return;
+    setSelectedCrew(crewId);
+    setConfirming(true);
+  };
+  
+  const handleConfirm = () => {
+    onSelect(selectedCrew, isInitialSelection ? 0 : switchCost);
+    onClose();
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className={`w-full max-w-2xl ${cardClass} border rounded-sm shadow-xl overflow-hidden max-h-[90vh] flex flex-col`}
+        onClick={e => e.stopPropagation()}>
+        
+        <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className="flex justify-between items-center">
+            <h2 className={`text-lg font-semibold ${textClass}`}>
+              {isInitialSelection ? '🏴 Choose Your Crew' : '🏴 Switch Crew'}
+            </h2>
+            {!isInitialSelection && (
+              <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
+            )}
+          </div>
+          {!isInitialSelection && currentCrew && (
+            <p className={`text-sm ${mutedClass} mt-1`}>
+              Current: <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.name}</span>
+              {' • '}Switching costs <span className="text-red-400">{formatCurrency(switchCost)}</span> (50% of portfolio)
+            </p>
+          )}
+          {isInitialSelection && (
+            <p className={`text-sm ${mutedClass} mt-1`}>
+              Join a crew to unlock daily missions, crew dividends, and compete for Crew Head!
+            </p>
+          )}
+        </div>
+        
+        {confirming ? (
+          <div className="p-6 text-center">
+            <div className="text-4xl mb-4">{CREW_MAP[selectedCrew]?.emblem}</div>
+            <h3 className={`text-xl font-bold mb-2 ${textClass}`} style={{ color: CREW_MAP[selectedCrew]?.color }}>
+              {CREW_MAP[selectedCrew]?.name}
+            </h3>
+            <p className={`${mutedClass} mb-6`}>{CREW_MAP[selectedCrew]?.description}</p>
+            
+            {!isInitialSelection && switchCost > 0 && (
+              <p className="text-red-400 mb-4">
+                This will cost you <span className="font-bold">{formatCurrency(switchCost)}</span>
+              </p>
+            )}
+            
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setConfirming(false)}
+                className={`px-6 py-2 rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300' : 'border-slate-300'}`}
+              >
+                Back
+              </button>
+              <button
+                onClick={handleConfirm}
+                className="px-6 py-2 rounded-sm bg-teal-600 hover:bg-teal-700 text-white font-semibold"
+              >
+                {isInitialSelection ? 'Join Crew' : 'Confirm Switch'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Object.values(CREWS).map(crew => (
+                <button
+                  key={crew.id}
+                  onClick={() => handleSelect(crew.id)}
+                  disabled={crew.id === currentCrew}
+                  className={`p-4 rounded-sm border-2 text-left transition-all ${
+                    crew.id === currentCrew
+                      ? 'opacity-50 cursor-not-allowed border-slate-600'
+                      : darkMode 
+                        ? 'border-slate-600 hover:border-teal-500 bg-slate-700/50' 
+                        : 'border-slate-300 hover:border-teal-500 bg-slate-50'
+                  }`}
+                  style={{ borderColor: crew.id === currentCrew ? undefined : undefined }}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-2xl">{crew.emblem}</span>
+                    <span className={`font-bold ${textClass}`} style={{ color: crew.color }}>
+                      {crew.name}
+                    </span>
+                  </div>
+                  <p className={`text-xs ${mutedClass}`}>{crew.description}</p>
+                  {crew.id === currentCrew && (
+                    <span className="text-xs text-teal-500 mt-2 block">✓ Current crew</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// PIN SHOP MODAL
+// ============================================
+
+const PinShopModal = ({ onClose, darkMode, userData, onPurchase }) => {
+  const [selectedPin, setSelectedPin] = useState(null);
+  const [activeTab, setActiveTab] = useState('shop'); // 'shop', 'achievement', 'manage'
+  
+  const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+  const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
+  const mutedClass = darkMode ? 'text-slate-400' : 'text-slate-500';
+  
+  const ownedPins = userData?.ownedShopPins || [];
+  const displayedShopPins = userData?.displayedShopPins || [];
+  const displayedAchievementPins = userData?.displayedAchievementPins || [];
+  const earnedAchievements = userData?.achievements || [];
+  const cash = userData?.cash || 0;
+  
+  // Calculate slots
+  const baseAchievementSlots = 1;
+  const baseShopSlots = 1;
+  const extraAchievementSlot = userData?.extraAchievementSlot ? 1 : 0;
+  const extraShopSlot = userData?.extraShopSlot ? 1 : 0;
+  const allAchievementsBonus = earnedAchievements.length >= Object.keys(ACHIEVEMENTS).length ? 1 : 0;
+  
+  const maxAchievementSlots = baseAchievementSlots + extraAchievementSlot + allAchievementsBonus;
+  const maxShopSlots = baseShopSlots + extraShopSlot;
+  
+  const handleBuyPin = (pin) => {
+    if (cash >= pin.price && !ownedPins.includes(pin.id)) {
+      onPurchase('buyPin', pin.id, pin.price);
+    }
+  };
+  
+  const handleToggleShopPin = (pinId) => {
+    const newDisplayed = displayedShopPins.includes(pinId)
+      ? displayedShopPins.filter(p => p !== pinId)
+      : displayedShopPins.length < maxShopSlots
+        ? [...displayedShopPins, pinId]
+        : displayedShopPins;
+    onPurchase('setShopPins', newDisplayed, 0);
+  };
+  
+  const handleToggleAchievementPin = (achId) => {
+    const newDisplayed = displayedAchievementPins.includes(achId)
+      ? displayedAchievementPins.filter(p => p !== achId)
+      : displayedAchievementPins.length < maxAchievementSlots
+        ? [...displayedAchievementPins, achId]
+        : displayedAchievementPins;
+    onPurchase('setAchievementPins', newDisplayed, 0);
+  };
+  
+  const handleBuySlot = (slotType) => {
+    const cost = slotType === 'achievement' ? PIN_SLOT_COSTS.EXTRA_ACHIEVEMENT_SLOT : PIN_SLOT_COSTS.EXTRA_SHOP_SLOT;
+    if (cash >= cost) {
+      onPurchase('buySlot', slotType, cost);
+    }
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className={`w-full max-w-2xl ${cardClass} border rounded-sm shadow-xl overflow-hidden max-h-[90vh] flex flex-col`}
+        onClick={e => e.stopPropagation()}>
+        
+        <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className="flex justify-between items-center">
+            <h2 className={`text-lg font-semibold ${textClass}`}>🏪 Pin Shop</h2>
+            <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
+          </div>
+          <p className={`text-sm ${mutedClass}`}>Cash: <span className="text-teal-500 font-semibold">{formatCurrency(cash)}</span></p>
+        </div>
+        
+        {/* Tabs */}
+        <div className={`flex border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          {['shop', 'achievement', 'manage'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2 text-sm font-semibold ${
+                activeTab === tab 
+                  ? 'text-teal-500 border-b-2 border-teal-500' 
+                  : mutedClass
+              }`}
+            >
+              {tab === 'shop' ? '🛒 Buy Pins' : tab === 'achievement' ? '🏆 Achievements' : '⚙️ Manage'}
+            </button>
+          ))}
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4">
+          {activeTab === 'shop' && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {SHOP_PINS_LIST.map(pin => {
+                const owned = ownedPins.includes(pin.id);
+                const canAfford = cash >= pin.price;
+                return (
+                  <div
+                    key={pin.id}
+                    className={`p-3 rounded-sm border ${
+                      owned 
+                        ? 'border-teal-500 bg-teal-500/10' 
+                        : darkMode ? 'border-slate-600' : 'border-slate-300'
+                    }`}
+                  >
+                    <div className="text-2xl text-center mb-2">{pin.emoji}</div>
+                    <div className={`text-sm font-semibold text-center ${textClass}`}>{pin.name}</div>
+                    <div className={`text-xs text-center ${mutedClass} mb-2`}>{pin.description}</div>
+                    {owned ? (
+                      <div className="text-xs text-center text-teal-500 font-semibold">✓ Owned</div>
+                    ) : (
+                      <button
+                        onClick={() => handleBuyPin(pin)}
+                        disabled={!canAfford}
+                        className={`w-full py-1 text-xs rounded-sm font-semibold ${
+                          canAfford 
+                            ? 'bg-teal-600 hover:bg-teal-700 text-white' 
+                            : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {formatCurrency(pin.price)}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {activeTab === 'achievement' && (
+            <div>
+              <p className={`text-sm ${mutedClass} mb-3`}>
+                Select up to {maxAchievementSlots} achievement{maxAchievementSlots > 1 ? 's' : ''} to display as pins.
+                ({displayedAchievementPins.length}/{maxAchievementSlots} selected)
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {earnedAchievements.map(achId => {
+                  const ach = ACHIEVEMENTS[achId];
+                  if (!ach) return null;
+                  const isDisplayed = displayedAchievementPins.includes(achId);
+                  return (
+                    <button
+                      key={achId}
+                      onClick={() => handleToggleAchievementPin(achId)}
+                      className={`p-3 rounded-sm border text-left ${
+                        isDisplayed 
+                          ? 'border-teal-500 bg-teal-500/10' 
+                          : darkMode ? 'border-slate-600' : 'border-slate-300'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">{ach.emoji}</div>
+                      <div className={`text-sm font-semibold ${textClass}`}>{ach.name}</div>
+                      {isDisplayed && <span className="text-xs text-teal-500">✓ Displayed</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {earnedAchievements.length === 0 && (
+                <p className={`text-center ${mutedClass} py-8`}>No achievements yet! Start trading to earn some.</p>
+              )}
+            </div>
+          )}
+          
+          {activeTab === 'manage' && (
+            <div className="space-y-6">
+              {/* Displayed Shop Pins */}
+              <div>
+                <h3 className={`font-semibold ${textClass} mb-2`}>
+                  Shop Pins ({displayedShopPins.length}/{maxShopSlots} slots)
+                </h3>
+                {ownedPins.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {ownedPins.map(pinId => {
+                      const pin = SHOP_PINS[pinId];
+                      if (!pin) return null;
+                      const isDisplayed = displayedShopPins.includes(pinId);
+                      return (
+                        <button
+                          key={pinId}
+                          onClick={() => handleToggleShopPin(pinId)}
+                          className={`px-3 py-2 rounded-sm border ${
+                            isDisplayed 
+                              ? 'border-teal-500 bg-teal-500/10' 
+                              : darkMode ? 'border-slate-600' : 'border-slate-300'
+                          }`}
+                        >
+                          <span className="mr-1">{pin.emoji}</span>
+                          <span className={`text-sm ${textClass}`}>{pin.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className={`text-sm ${mutedClass}`}>No pins owned yet. Visit the shop to buy some!</p>
+                )}
+              </div>
+              
+              {/* Buy Extra Slots */}
+              <div>
+                <h3 className={`font-semibold ${textClass} mb-2`}>Buy Extra Slots</h3>
+                <div className="flex flex-wrap gap-3">
+                  {!userData?.extraAchievementSlot && (
+                    <button
+                      onClick={() => handleBuySlot('achievement')}
+                      disabled={cash < PIN_SLOT_COSTS.EXTRA_ACHIEVEMENT_SLOT}
+                      className={`px-4 py-2 rounded-sm border ${
+                        cash >= PIN_SLOT_COSTS.EXTRA_ACHIEVEMENT_SLOT
+                          ? 'border-teal-500 text-teal-500 hover:bg-teal-500/10'
+                          : 'border-slate-600 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      +1 Achievement Slot ({formatCurrency(PIN_SLOT_COSTS.EXTRA_ACHIEVEMENT_SLOT)})
+                    </button>
+                  )}
+                  {!userData?.extraShopSlot && (
+                    <button
+                      onClick={() => handleBuySlot('shop')}
+                      disabled={cash < PIN_SLOT_COSTS.EXTRA_SHOP_SLOT}
+                      className={`px-4 py-2 rounded-sm border ${
+                        cash >= PIN_SLOT_COSTS.EXTRA_SHOP_SLOT
+                          ? 'border-teal-500 text-teal-500 hover:bg-teal-500/10'
+                          : 'border-slate-600 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      +1 Shop Slot ({formatCurrency(PIN_SLOT_COSTS.EXTRA_SHOP_SLOT)})
+                    </button>
+                  )}
+                  {userData?.extraAchievementSlot && userData?.extraShopSlot && (
+                    <p className={`text-sm ${mutedClass}`}>All extra slots purchased!</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -2463,6 +2924,9 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [showLending, setShowLending] = useState(false);
+  const [showCrewSelection, setShowCrewSelection] = useState(false);
+  const [showPinShop, setShowPinShop] = useState(false);
+  const [needsCrewSelection, setNeedsCrewSelection] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [notification, setNotification] = useState(null);
   const [needsUsername, setNeedsUsername] = useState(false);
@@ -2488,7 +2952,13 @@ export default function App() {
           setUserData(null);
         } else {
           setNeedsUsername(false);
-          setUserData(userSnap.data());
+          const data = userSnap.data();
+          setUserData(data);
+          
+          // Check if user needs to select a crew
+          if (!data.crew) {
+            setNeedsCrewSelection(true);
+          }
           
           // Subscribe to user data changes
           onSnapshot(userDocRef, (snap) => {
@@ -2498,6 +2968,7 @@ export default function App() {
       } else {
         setUserData(null);
         setNeedsUsername(false);
+        setNeedsCrewSelection(false);
       }
       setLoading(false);
     });
@@ -2802,6 +3273,89 @@ export default function App() {
       }
     }
   }, []);
+
+  // Handle crew selection
+  const handleCrewSelect = useCallback(async (crewId, cost) => {
+    if (!user || !userData) return;
+    
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const updateData = {
+        crew: crewId,
+        crewJoinedAt: Date.now()
+      };
+      
+      // Deduct cost if switching crews
+      if (cost > 0) {
+        updateData.cash = userData.cash - cost;
+        // Also update portfolio value
+        const newPortfolioValue = userData.portfolioValue - cost;
+        updateData.portfolioValue = newPortfolioValue;
+      }
+      
+      await updateDoc(userRef, updateData);
+      setNeedsCrewSelection(false);
+      
+      const crew = CREW_MAP[crewId];
+      setNotification({ 
+        type: 'success', 
+        message: cost > 0 
+          ? `Switched to ${crew.name} for ${formatCurrency(cost)}!`
+          : `Welcome to ${crew.name}! ${crew.emblem}`
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error('Failed to select crew:', err);
+      setNotification({ type: 'error', message: 'Failed to join crew' });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  }, [user, userData]);
+
+  // Handle pin shop purchases and updates
+  const handlePinAction = useCallback(async (action, payload, cost) => {
+    if (!user || !userData) return;
+    
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      
+      if (action === 'buyPin') {
+        // Buy a shop pin
+        const currentOwned = userData.ownedShopPins || [];
+        if (currentOwned.includes(payload)) return;
+        
+        await updateDoc(userRef, {
+          ownedShopPins: arrayUnion(payload),
+          cash: userData.cash - cost
+        });
+        
+        const pin = SHOP_PINS[payload];
+        setNotification({ type: 'success', message: `Purchased ${pin.emoji} ${pin.name}!` });
+        setTimeout(() => setNotification(null), 3000);
+        
+      } else if (action === 'setShopPins') {
+        // Update displayed shop pins
+        await updateDoc(userRef, { displayedShopPins: payload });
+        
+      } else if (action === 'setAchievementPins') {
+        // Update displayed achievement pins
+        await updateDoc(userRef, { displayedAchievementPins: payload });
+        
+      } else if (action === 'buySlot') {
+        // Buy extra slot
+        const field = payload === 'achievement' ? 'extraAchievementSlot' : 'extraShopSlot';
+        await updateDoc(userRef, {
+          [field]: true,
+          cash: userData.cash - cost
+        });
+        setNotification({ type: 'success', message: `Unlocked extra ${payload} pin slot!` });
+        setTimeout(() => setNotification(null), 3000);
+      }
+    } catch (err) {
+      console.error('Pin action failed:', err);
+      setNotification({ type: 'error', message: 'Action failed' });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  }, [user, userData]);
 
   // Handle trade
   const handleTrade = useCallback(async (ticker, action, amount) => {
@@ -3555,6 +4109,19 @@ export default function App() {
               🏆 Leaderboard
             </button>
             {!isGuest && (
+              <button onClick={() => setShowCrewSelection(true)}
+                className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}
+                style={userData?.crew ? { borderColor: CREW_MAP[userData.crew]?.color, color: CREW_MAP[userData.crew]?.color } : {}}>
+                {userData?.crew ? `${CREW_MAP[userData.crew]?.emblem} ${CREW_MAP[userData.crew]?.name}` : '🏴 Join Crew'}
+              </button>
+            )}
+            {!isGuest && (
+              <button onClick={() => setShowPinShop(true)}
+                className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
+                🏪 Pin Shop
+              </button>
+            )}
+            {!isGuest && (
               <button onClick={() => setShowAchievements(true)}
                 className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
                 🎯 Achievements
@@ -3591,7 +4158,12 @@ export default function App() {
               </button>
             ) : (
               <>
-                <span className={`text-sm ${mutedClass}`}>{userData?.displayName}</span>
+                <span className={`text-sm ${mutedClass} flex items-center`}>
+                  <span style={userData?.isCrewHead && userData?.crew ? { color: userData.crewHeadColor || CREW_MAP[userData.crew]?.color } : {}}>
+                    {userData?.displayName}
+                  </span>
+                  <PinDisplay userData={userData} size="sm" />
+                </span>
                 <button onClick={handleLogout}
                   className="px-3 py-1 text-xs rounded-sm bg-red-600 hover:bg-red-700 text-white font-semibold uppercase">
                   Logout
@@ -3759,7 +4331,7 @@ export default function App() {
           darkMode={darkMode} 
         />
       )}
-      {showLeaderboard && <LeaderboardModal onClose={() => setShowLeaderboard(false)} darkMode={darkMode} />}
+      {showLeaderboard && <LeaderboardModal onClose={() => setShowLeaderboard(false)} darkMode={darkMode} currentUserCrew={userData?.crew} />}
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} darkMode={darkMode} />}
       {showAchievements && !isGuest && (
         <AchievementsModal 
@@ -3775,6 +4347,23 @@ export default function App() {
           userData={userData}
           onBorrow={handleBorrow}
           onRepay={handleRepay}
+        />
+      )}
+      {(showCrewSelection || needsCrewSelection) && !isGuest && (
+        <CrewSelectionModal
+          onClose={() => { setShowCrewSelection(false); if (!userData?.crew) setNeedsCrewSelection(false); }}
+          onSelect={handleCrewSelect}
+          darkMode={darkMode}
+          userData={userData}
+          isInitialSelection={needsCrewSelection && !userData?.crew}
+        />
+      )}
+      {showPinShop && !isGuest && (
+        <PinShopModal
+          onClose={() => setShowPinShop(false)}
+          darkMode={darkMode}
+          userData={userData}
+          onPurchase={handlePinAction}
         />
       )}
       {showAdmin && (
