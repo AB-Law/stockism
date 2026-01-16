@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA7h7BCmgIUkJHLENTRjCj6i43BV6ly5DA",
@@ -13,6 +14,13 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
+// Initialize App Check with reCAPTCHA v3
+const appCheck = initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider('6Lf-LEwsAAAAADc8tvjTERwlELg-EQIg0ag80whE'),
+  isTokenAutoRefreshEnabled: true
+});
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 // Request email scope explicitly
