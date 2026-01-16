@@ -1678,9 +1678,10 @@ const PinDisplay = ({ userData, size = 'sm' }) => {
 // CREW SELECTION MODAL
 // ============================================
 
-const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSelection = false }) => {
+const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData, isInitialSelection = false }) => {
   const [selectedCrew, setSelectedCrew] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [leavingCrew, setLeavingCrew] = useState(false);
   
   const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
   const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
@@ -1700,6 +1701,11 @@ const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSe
     onSelect(selectedCrew, isInitialSelection ? 0 : switchCost);
     onClose();
   };
+
+  const handleLeave = () => {
+    onLeave(switchCost);
+    onClose();
+  };
   
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={onClose}>
@@ -1709,7 +1715,7 @@ const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSe
         <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <div className="flex justify-between items-center">
             <h2 className={`text-lg font-semibold ${textClass}`}>
-              {isInitialSelection ? '🏴 Choose Your Crew' : '🏴 Switch Crew'}
+              {isInitialSelection ? '🏴 Choose Your Crew' : '🏴 Crew'}
             </h2>
             {!isInitialSelection && (
               <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
@@ -1717,8 +1723,8 @@ const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSe
           </div>
           {!isInitialSelection && currentCrew && (
             <p className={`text-sm ${mutedClass} mt-1`}>
-              Current: <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.name}</span>
-              {' • '}Switching costs <span className="text-red-400">{formatCurrency(switchCost)}</span> (50% of portfolio)
+              Current: <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.emblem} {CREW_MAP[currentCrew]?.name}</span>
+              {' • '}Leaving or switching costs <span className="text-red-400">{formatCurrency(switchCost)}</span> (50% of portfolio)
             </p>
           )}
           {isInitialSelection && (
@@ -1728,13 +1734,36 @@ const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSe
           )}
         </div>
         
-        {confirming ? (
+        {leavingCrew ? (
+          <div className="p-6 text-center">
+            <div className="text-4xl mb-4">🚪</div>
+            <h3 className={`text-xl font-bold mb-2 ${textClass}`}>Leave {CREW_MAP[currentCrew]?.name}?</h3>
+            <p className="text-red-400 mb-4">
+              This will cost you <span className="font-bold">{formatCurrency(switchCost)}</span>
+            </p>
+            <p className={`text-sm ${mutedClass} mb-6`}>You can rejoin any crew later (for another 50% cost).</p>
+            
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setLeavingCrew(false)}
+                className={`px-6 py-2 rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300' : 'border-slate-300'}`}
+              >
+                Back
+              </button>
+              <button
+                onClick={handleLeave}
+                className="px-6 py-2 rounded-sm bg-red-600 hover:bg-red-700 text-white font-semibold"
+              >
+                Leave Crew
+              </button>
+            </div>
+          </div>
+        ) : confirming ? (
           <div className="p-6 text-center">
             <div className="text-4xl mb-4">{CREW_MAP[selectedCrew]?.emblem}</div>
             <h3 className={`text-xl font-bold mb-2 ${textClass}`} style={{ color: CREW_MAP[selectedCrew]?.color }}>
               {CREW_MAP[selectedCrew]?.name}
             </h3>
-            <p className={`${mutedClass} mb-6`}>{CREW_MAP[selectedCrew]?.description}</p>
             
             {!isInitialSelection && switchCost > 0 && (
               <p className="text-red-400 mb-4">
@@ -1759,28 +1788,36 @@ const CrewSelectionModal = ({ onClose, onSelect, darkMode, userData, isInitialSe
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-4">
+            {/* Leave Crew Button */}
+            {!isInitialSelection && currentCrew && (
+              <button
+                onClick={() => setLeavingCrew(true)}
+                className={`w-full mb-4 p-3 rounded-sm border-2 border-red-500/50 text-red-400 hover:bg-red-500/10 transition-all`}
+              >
+                🚪 Leave Current Crew
+              </button>
+            )}
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {Object.values(CREWS).map(crew => (
                 <button
                   key={crew.id}
                   onClick={() => handleSelect(crew.id)}
                   disabled={crew.id === currentCrew}
-                  className={`p-4 rounded-sm border-2 text-left transition-all ${
+                  className={`p-4 rounded-sm border-2 text-center transition-all ${
                     crew.id === currentCrew
                       ? 'opacity-50 cursor-not-allowed border-slate-600'
                       : darkMode 
                         ? 'border-slate-600 hover:border-teal-500 bg-slate-700/50' 
                         : 'border-slate-300 hover:border-teal-500 bg-slate-50'
                   }`}
-                  style={{ borderColor: crew.id === currentCrew ? undefined : undefined }}
                 >
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center justify-center gap-2">
                     <span className="text-2xl">{crew.emblem}</span>
                     <span className={`font-bold ${textClass}`} style={{ color: crew.color }}>
                       {crew.name}
                     </span>
                   </div>
-                  <p className={`text-xs ${mutedClass}`}>{crew.description}</p>
                   {crew.id === currentCrew && (
                     <span className="text-xs text-teal-500 mt-2 block">✓ Current crew</span>
                   )}
@@ -3342,6 +3379,35 @@ export default function App() {
     }
   }, [user, userData]);
 
+  // Handle leaving crew
+  const handleCrewLeave = useCallback(async (cost) => {
+    if (!user || !userData || !userData.crew) return;
+    
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const oldCrew = CREW_MAP[userData.crew];
+      
+      await updateDoc(userRef, {
+        crew: null,
+        crewJoinedAt: null,
+        isCrewHead: false,
+        crewHeadColor: null,
+        cash: userData.cash - cost,
+        portfolioValue: userData.portfolioValue - cost
+      });
+      
+      setNotification({ 
+        type: 'success', 
+        message: `Left ${oldCrew?.name || 'crew'} for ${formatCurrency(cost)}`
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error('Failed to leave crew:', err);
+      setNotification({ type: 'error', message: 'Failed to leave crew' });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  }, [user, userData]);
+
   // Handle pin shop purchases and updates
   const handlePinAction = useCallback(async (action, payload, cost) => {
     if (!user || !userData) return;
@@ -4390,6 +4456,7 @@ export default function App() {
         <CrewSelectionModal
           onClose={() => { setShowCrewSelection(false); if (!userData?.crew) setNeedsCrewSelection(false); }}
           onSelect={handleCrewSelect}
+          onLeave={handleCrewLeave}
           darkMode={darkMode}
           userData={userData}
           isInitialSelection={needsCrewSelection && !userData?.crew}
