@@ -92,7 +92,7 @@ const ACHIEVEMENTS = {
   DIAMOND_HANDS: {
     id: 'DIAMOND_HANDS',
     name: 'Diamond Hands',
-    emoji: '💎',
+    emoji: '🙌',
     description: 'Hold through a 30% dip and recover to profit',
     hint: 'Hold strong through the storm'
   },
@@ -108,7 +108,7 @@ const ACHIEVEMENTS = {
   BROKE_2K: {
     id: 'BROKE_2K',
     name: 'Breaking Even... Kinda',
-    emoji: '💰',
+    emoji: '💵',
     description: 'Reach $2,500 portfolio value',
     hint: 'Build your wealth'
   },
@@ -129,7 +129,7 @@ const ACHIEVEMENTS = {
   BROKE_25K: {
     id: 'BROKE_25K',
     name: 'Tycoon',
-    emoji: '👑',
+    emoji: '🏛️',
     description: 'Reach $25,000 portfolio value',
     hint: 'Market domination'
   },
@@ -161,14 +161,14 @@ const ACHIEVEMENTS = {
   DEDICATED_14: {
     id: 'DEDICATED_14',
     name: 'Committed',
-    emoji: '🔥',
+    emoji: '🔄',
     description: 'Check in 14 days total',
     hint: 'Two weeks strong'
   },
   DEDICATED_30: {
     id: 'DEDICATED_30',
     name: 'Devoted',
-    emoji: '⭐',
+    emoji: '✨',
     description: 'Check in 30 days total',
     hint: 'A month of dedication'
   },
@@ -217,6 +217,29 @@ const ACHIEVEMENTS = {
     emoji: '💹',
     description: 'Complete 100 trades',
     hint: 'Trading is your life now'
+  },
+  
+  // Daily Mission milestones
+  MISSION_10: {
+    id: 'MISSION_10',
+    name: 'Task Runner',
+    emoji: '📋',
+    description: 'Complete 10 daily missions',
+    hint: 'Stay on task'
+  },
+  MISSION_50: {
+    id: 'MISSION_50',
+    name: 'Mission Master',
+    emoji: '🎖️',
+    description: 'Complete 50 daily missions',
+    hint: 'Dedicated to the grind'
+  },
+  MISSION_100: {
+    id: 'MISSION_100',
+    name: 'Mission Legend',
+    emoji: '🎗️',
+    description: 'Complete 100 daily missions',
+    hint: 'Never miss a mission'
   }
 };
 
@@ -2299,6 +2322,7 @@ const AchievementsModal = ({ onClose, darkMode, userData }) => {
     'Portfolio': ['BROKE_2K', 'BROKE_5K', 'BROKE_10K', 'BROKE_25K'],
     'Predictions': ['ORACLE', 'PROPHET'],
     'Dedication': ['DEDICATED_7', 'DEDICATED_14', 'DEDICATED_30', 'DEDICATED_100'],
+    'Missions': ['MISSION_10', 'MISSION_50', 'MISSION_100'],
     'Leaderboard': ['TOP_10', 'TOP_3', 'TOP_1']
   };
   
@@ -3693,13 +3717,35 @@ export default function App() {
     try {
       const userRef = doc(db, 'users', user.uid);
       const today = getTodayDateString();
+      const currentTotalMissions = userData.totalMissionsCompleted || 0;
+      const newTotalMissions = currentTotalMissions + 1;
       
       await updateDoc(userRef, {
         [`dailyMissions.${today}.claimed.${missionId}`]: true,
-        cash: userData.cash + reward
+        cash: userData.cash + reward,
+        totalMissionsCompleted: newTotalMissions
       });
       
-      setNotification({ type: 'success', message: `Claimed ${formatCurrency(reward)} mission reward!` });
+      // Check for mission achievements
+      const achievements = userData.achievements || [];
+      let earnedAchievement = null;
+      
+      if (newTotalMissions >= 10 && !achievements.includes('MISSION_10')) {
+        await updateDoc(userRef, { achievements: arrayUnion('MISSION_10') });
+        earnedAchievement = ACHIEVEMENTS.MISSION_10;
+      } else if (newTotalMissions >= 50 && !achievements.includes('MISSION_50')) {
+        await updateDoc(userRef, { achievements: arrayUnion('MISSION_50') });
+        earnedAchievement = ACHIEVEMENTS.MISSION_50;
+      } else if (newTotalMissions >= 100 && !achievements.includes('MISSION_100')) {
+        await updateDoc(userRef, { achievements: arrayUnion('MISSION_100') });
+        earnedAchievement = ACHIEVEMENTS.MISSION_100;
+      }
+      
+      if (earnedAchievement) {
+        setNotification({ type: 'achievement', message: `🏆 ${earnedAchievement.emoji} ${earnedAchievement.name} unlocked!` });
+      } else {
+        setNotification({ type: 'success', message: `Claimed ${formatCurrency(reward)} mission reward!` });
+      }
       setTimeout(() => setNotification(null), 3000);
     } catch (err) {
       console.error('Failed to claim reward:', err);
