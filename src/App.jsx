@@ -220,6 +220,12 @@ const ACHIEVEMENTS = {
   }
 };
 
+// Helper to get today's date string for mission tracking
+const getTodayDateString = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
 // Check if user qualifies for lending (requires commitment + skill)
 const checkLendingEligibility = (userData) => {
   if (!userData) return { eligible: false, reasons: [] };
@@ -2129,6 +2135,151 @@ const PinShopModal = ({ onClose, darkMode, userData, onPurchase }) => {
 };
 
 // ============================================
+// DAILY MISSIONS MODAL
+// ============================================
+
+const DailyMissionsModal = ({ onClose, darkMode, userData, prices, onClaimReward }) => {
+  const cardClass = darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+  const textClass = darkMode ? 'text-slate-100' : 'text-slate-900';
+  const mutedClass = darkMode ? 'text-slate-400' : 'text-slate-500';
+  
+  const today = getTodayDateString();
+  const dailyProgress = userData?.dailyMissions?.[today] || {};
+  const userCrew = userData?.crew;
+  const crewMembers = userCrew ? CREW_MAP[userCrew]?.members || [] : [];
+  
+  // Calculate mission progress
+  const getMissionProgress = (mission) => {
+    switch (mission.checkType) {
+      case 'BUY_CREW': {
+        // Check if user bought any crew member stock today
+        const bought = dailyProgress.boughtCrewMember || false;
+        return { complete: bought, progress: bought ? 1 : 0, target: 1 };
+      }
+      case 'HOLD_CREW': {
+        // Count total shares of crew members
+        const totalShares = crewMembers.reduce((sum, ticker) => {
+          return sum + (userData?.holdings?.[ticker] || 0);
+        }, 0);
+        return { 
+          complete: totalShares >= mission.requirement, 
+          progress: totalShares, 
+          target: mission.requirement 
+        };
+      }
+      case 'TRADE_COUNT': {
+        const trades = dailyProgress.tradesCount || 0;
+        return { 
+          complete: trades >= mission.requirement, 
+          progress: trades, 
+          target: mission.requirement 
+        };
+      }
+      default:
+        return { complete: false, progress: 0, target: 1 };
+    }
+  };
+  
+  const missions = Object.values(DAILY_MISSIONS).map(mission => ({
+    ...mission,
+    ...getMissionProgress(mission),
+    claimed: dailyProgress.claimed?.[mission.id] || false
+  }));
+  
+  const totalRewards = missions.reduce((sum, m) => sum + m.reward, 0);
+  const earnedRewards = missions.filter(m => m.complete && m.claimed).reduce((sum, m) => sum + m.reward, 0);
+  const claimableRewards = missions.filter(m => m.complete && !m.claimed).reduce((sum, m) => sum + m.reward, 0);
+  
+  // Check if user has no crew
+  const noCrew = !userCrew;
+  
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className={`w-full max-w-md ${cardClass} border rounded-sm shadow-xl overflow-hidden`}
+        onClick={e => e.stopPropagation()}>
+        
+        <div className={`p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className="flex justify-between items-center">
+            <h2 className={`text-lg font-semibold ${textClass}`}>📋 Daily Missions</h2>
+            <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
+          </div>
+          <p className={`text-sm ${mutedClass}`}>
+            Resets daily • Earned: <span className="text-teal-500">{formatCurrency(earnedRewards)}</span> / {formatCurrency(totalRewards)}
+          </p>
+        </div>
+        
+        <div className="p-4 space-y-3">
+          {noCrew ? (
+            <div className={`p-4 rounded-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-100'} text-center`}>
+              <p className={`${mutedClass} mb-2`}>Join a crew to unlock daily missions!</p>
+              <p className={`text-xs ${mutedClass}`}>Crew missions give you bonus cash rewards every day.</p>
+            </div>
+          ) : (
+            <>
+              {missions.map(mission => (
+                <div 
+                  key={mission.id}
+                  className={`p-3 rounded-sm border ${
+                    mission.claimed 
+                      ? 'border-teal-500/30 bg-teal-500/5' 
+                      : mission.complete 
+                        ? 'border-teal-500 bg-teal-500/10' 
+                        : darkMode ? 'border-slate-600' : 'border-slate-300'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className={`font-semibold ${textClass}`}>{mission.name}</h3>
+                      <p className={`text-xs ${mutedClass}`}>{mission.description}</p>
+                    </div>
+                    <span className={`text-sm font-bold ${mission.complete ? 'text-teal-500' : mutedClass}`}>
+                      +{formatCurrency(mission.reward)}
+                    </span>
+                  </div>
+                  
+                  {/* Progress bar */}
+                  <div className="flex items-center gap-2">
+                    <div className={`flex-1 h-2 rounded-full ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                      <div 
+                        className={`h-full rounded-full transition-all ${mission.complete ? 'bg-teal-500' : 'bg-amber-500'}`}
+                        style={{ width: `${Math.min(100, (mission.progress / mission.target) * 100)}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs ${mutedClass} w-12 text-right`}>
+                      {mission.progress}/{mission.target}
+                    </span>
+                  </div>
+                  
+                  {/* Claim button */}
+                  {mission.complete && !mission.claimed && (
+                    <button
+                      onClick={() => onClaimReward(mission.id, mission.reward)}
+                      className="w-full mt-2 py-1.5 text-sm font-semibold rounded-sm bg-teal-600 hover:bg-teal-700 text-white"
+                    >
+                      Claim Reward
+                    </button>
+                  )}
+                  {mission.claimed && (
+                    <p className="text-xs text-teal-500 mt-2 text-center">✓ Claimed</p>
+                  )}
+                </div>
+              ))}
+              
+              {/* Crew member hint */}
+              <div className={`p-2 rounded-sm ${darkMode ? 'bg-slate-700/30' : 'bg-slate-100'}`}>
+                <p className={`text-xs ${mutedClass}`}>
+                  <span style={{ color: CREW_MAP[userCrew]?.color }}>{CREW_MAP[userCrew]?.emblem} {CREW_MAP[userCrew]?.name}</span> members: {crewMembers.join(', ')}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // ACHIEVEMENTS MODAL
 // ============================================
 
@@ -3025,6 +3176,7 @@ export default function App() {
   const [showLending, setShowLending] = useState(false);
   const [showCrewSelection, setShowCrewSelection] = useState(false);
   const [showPinShop, setShowPinShop] = useState(false);
+  const [showDailyMissions, setShowDailyMissions] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [notification, setNotification] = useState(null);
   const [needsUsername, setNeedsUsername] = useState(false);
@@ -3534,6 +3686,28 @@ export default function App() {
     }
   }, [user, userData]);
 
+  // Handle claiming daily mission rewards
+  const handleClaimMissionReward = useCallback(async (missionId, reward) => {
+    if (!user || !userData) return;
+    
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const today = getTodayDateString();
+      
+      await updateDoc(userRef, {
+        [`dailyMissions.${today}.claimed.${missionId}`]: true,
+        cash: userData.cash + reward
+      });
+      
+      setNotification({ type: 'success', message: `Claimed ${formatCurrency(reward)} mission reward!` });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error('Failed to claim reward:', err);
+      setNotification({ type: 'error', message: 'Failed to claim reward' });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  }, [user, userData]);
+
   // Handle trade
   const handleTrade = useCallback(async (ticker, action, amount) => {
     if (!user || !userData) {
@@ -3611,15 +3785,30 @@ export default function App() {
         ? ((currentCostBasis * currentHoldings) + (buyPrice * amount)) / newHoldings
         : buyPrice;
 
-      // Update user with trade count, cost basis, and last buy time for holding period
-      await updateDoc(userRef, {
+      // Check if this is a crew member purchase for daily missions
+      const today = getTodayDateString();
+      const userCrew = userData.crew;
+      const crewMembers = userCrew ? CREW_MAP[userCrew]?.members || [] : [];
+      const isBuyingCrewMember = crewMembers.includes(ticker);
+      const currentTradesCount = userData.dailyMissions?.[today]?.tradesCount || 0;
+
+      // Update user with trade count, cost basis, last buy time, and daily mission progress
+      const updateData = {
         cash: userData.cash - totalCost,
         [`holdings.${ticker}`]: newHoldings,
         [`costBasis.${ticker}`]: Math.round(newCostBasis * 100) / 100,
         [`lastBuyTime.${ticker}`]: now,
         lastTradeTime: now,
-        totalTrades: increment(1)
-      });
+        totalTrades: increment(1),
+        [`dailyMissions.${today}.tradesCount`]: currentTradesCount + 1
+      };
+      
+      // Mark crew member purchase if applicable
+      if (isBuyingCrewMember) {
+        updateData[`dailyMissions.${today}.boughtCrewMember`] = true;
+      }
+
+      await updateDoc(userRef, updateData);
 
       await updateDoc(marketRef, { totalTrades: increment(1) });
       
@@ -3699,13 +3888,18 @@ export default function App() {
       const newHoldings = currentHoldings - amount;
       const costBasisUpdate = newHoldings <= 0 ? 0 : userData.costBasis?.[ticker] || 0;
 
-      // Update user with trade count
+      // Track daily mission progress
+      const today = getTodayDateString();
+      const currentTradesCount = userData.dailyMissions?.[today]?.tradesCount || 0;
+
+      // Update user with trade count and daily mission progress
       await updateDoc(userRef, {
         cash: userData.cash + totalRevenue,
         [`holdings.${ticker}`]: newHoldings,
         [`costBasis.${ticker}`]: costBasisUpdate,
         lastTradeTime: now,
-        totalTrades: increment(1)
+        totalTrades: increment(1),
+        [`dailyMissions.${today}.tradesCount`]: currentTradesCount + 1
       });
 
       await updateDoc(marketRef, { totalTrades: increment(1) });
@@ -4293,6 +4487,12 @@ export default function App() {
               </button>
             )}
             {!isGuest && (
+              <button onClick={() => setShowDailyMissions(true)}
+                className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
+                📋 Missions
+              </button>
+            )}
+            {!isGuest && (
               <button onClick={() => setShowPinShop(true)}
                 className={`px-3 py-1 text-xs rounded-sm border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}>
                 🏪 Pin Shop
@@ -4541,6 +4741,15 @@ export default function App() {
           darkMode={darkMode}
           userData={userData}
           onPurchase={handlePinAction}
+        />
+      )}
+      {showDailyMissions && !isGuest && (
+        <DailyMissionsModal
+          onClose={() => setShowDailyMissions(false)}
+          darkMode={darkMode}
+          userData={userData}
+          prices={prices}
+          onClaimReward={handleClaimMissionReward}
         />
       )}
       {showAdmin && (
