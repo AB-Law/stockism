@@ -3,6 +3,7 @@
 // Strongest characters = oldest (added first), Weakest = newest (added last)
 export const CHARACTERS = [
   { name: "James Lee", ticker: "DG", basePrice: 85, volatility: 0.03, dateAdded: "2026-01-13T00:00:00" },
+  { name: "Mujin Jin", ticker: "JIN", basePrice: 85, volatility: 0.03, dateAdded: "2026-01-13T00:00:30" },
   { name: "Shingen Yamazaki", ticker: "SHNG", basePrice: 85, volatility: 0.03, dateAdded: "2026-01-13T00:01:00" },
   { name: "Gapryong Kim", ticker: "GAP", basePrice: 85, volatility: 0.03, dateAdded: "2026-01-13T00:02:00" },
   { name: "Gun Park", ticker: "GUN", basePrice: 85, volatility: 0.035, dateAdded: "2026-01-13T00:03:00" },
