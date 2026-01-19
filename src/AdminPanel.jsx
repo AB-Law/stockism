@@ -114,12 +114,20 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
         const data = snap.data();
         const currentHistory = data.priceHistory?.[selectedTicker] || [];
         
+        console.log('Current history length for', selectedTicker, ':', currentHistory.length);
+        console.log('Last entry:', currentHistory[currentHistory.length - 1]);
+        
         // Add to price history for natural chart appearance
-        const updatedHistory = [...currentHistory, { timestamp: now, price: targetPrice }].slice(-1000);
+        const updatedHistory = [...currentHistory, { timestamp: now, price: targetPrice }];
+        // Keep last 1000 entries
+        const trimmedHistory = updatedHistory.slice(-1000);
+        
+        console.log('New history length:', trimmedHistory.length);
+        console.log('New last entry:', trimmedHistory[trimmedHistory.length - 1]);
         
         await updateDoc(marketRef, {
           [`prices.${selectedTicker}`]: targetPrice,
-          [`priceHistory.${selectedTicker}`]: updatedHistory
+          [`priceHistory.${selectedTicker}`]: trimmedHistory
         });
       } else {
         // Market doc doesn't exist, create it with this price
