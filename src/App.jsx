@@ -2714,7 +2714,7 @@ const ProfileModal = ({ onClose, darkMode, userData, predictions }) => {
                   const potentialPayout = calculatePotentialPayout(bet);
                   return (
                     <div key={bet.predictionId} className={`p-3 rounded-sm border ${darkMode ? 'border-slate-600' : 'border-slate-300'}`}>
-                      <p className={`text-sm font-semibold ${textClass}`}>{bet.prediction.question}</p>
+                      <p className={`text-sm font-semibold ${textClass}`}>{bet.prediction?.question || bet.question}</p>
                       <div className="flex justify-between items-center mt-2">
                         <div>
                           <span className={`text-xs ${mutedClass}`}>Your bet: </span>
@@ -2758,12 +2758,12 @@ const ProfileModal = ({ onClose, darkMode, userData, predictions }) => {
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <p className={`text-sm font-semibold ${textClass}`}>
-                            {bet.prediction?.question || `Prediction #${bet.predictionId}`}
+                            {bet.prediction?.question || bet.question || 'Past prediction (details unavailable)'}
                           </p>
                           <p className={`text-xs ${mutedClass} mt-1`}>
                             Your answer: <span className={`font-semibold ${won ? 'text-green-500' : 'text-red-400'}`}>"{bet.option}"</span>
-                            {bet.prediction?.outcome && (
-                              <span> • Correct answer: <span className="text-teal-500">"{bet.prediction.outcome}"</span></span>
+                            {(bet.prediction?.outcome || bet.outcome) && (
+                              <span> • Correct answer: <span className="text-teal-500">"{bet.prediction?.outcome || bet.outcome}"</span></span>
                             )}
                           </p>
                         </div>
@@ -2781,7 +2781,7 @@ const ProfileModal = ({ onClose, darkMode, userData, predictions }) => {
                       <div className={`text-xs mt-2 ${mutedClass}`}>
                         Bet: {formatCurrency(bet.amount)}
                         {paidOut ? (
-                          <span className="text-green-500 ml-2">✓ Paid out</span>
+                          <span className="text-green-500 ml-2">✓ Paid out to winners</span>
                         ) : bet.prediction?.resolved ? (
                           <span className="text-amber-500 ml-2">⏳ Payout pending</span>
                         ) : null}
@@ -4871,7 +4871,8 @@ export default function App() {
       [`bets.${predictionId}`]: {
         option,
         amount: newBetAmount,
-        placedAt: Date.now()
+        placedAt: Date.now(),
+        question: prediction.question // Store question for history
       },
       [`dailyMissions.${getTodayDateString()}.placedBet`]: true
     });
@@ -5000,11 +5001,50 @@ export default function App() {
     CHARACTERS.forEach(c => {
       priceChanges[c.ticker] = get24hChange(c.ticker);
     });
+    
+    // Calculate trade activity (number of price history entries) for "active" sort
+    const getTradeActivity = (ticker) => {
+      const history = priceHistory[ticker] || [];
+      const now = Date.now();
+      const weekAgo = now - (7 * 24 * 60 * 60 * 1000);
+      const dayAgo = now - (24 * 60 * 60 * 1000);
+      
+      // Count entries in the last week and last day
+      let weekTrades = 0;
+      let dayTrades = 0;
+      
+      for (const entry of history) {
+        if (entry.timestamp >= weekAgo) {
+          weekTrades++;
+          if (entry.timestamp >= dayAgo) {
+            dayTrades++;
+          }
+        }
+      }
+      
+      return { weekTrades, dayTrades };
+    };
 
     switch (sortBy) {
       case 'price-high': filtered.sort((a, b) => (prices[b.ticker] || b.basePrice) - (prices[a.ticker] || a.basePrice)); break;
       case 'price-low': filtered.sort((a, b) => (prices[a.ticker] || a.basePrice) - (prices[b.ticker] || b.basePrice)); break;
-      case 'active': filtered.sort((a, b) => Math.abs(priceChanges[b.ticker]) - Math.abs(priceChanges[a.ticker])); break;
+      case 'active': 
+        filtered.sort((a, b) => {
+          const activityA = getTradeActivity(a.ticker);
+          const activityB = getTradeActivity(b.ticker);
+          
+          // Primary: most trades in last week
+          if (activityB.weekTrades !== activityA.weekTrades) {
+            return activityB.weekTrades - activityA.weekTrades;
+          }
+          // Secondary: most trades in last day
+          if (activityB.dayTrades !== activityA.dayTrades) {
+            return activityB.dayTrades - activityA.dayTrades;
+          }
+          // Tertiary: alphabetical by ticker
+          return a.ticker.localeCompare(b.ticker);
+        });
+        break;
       case 'ticker': filtered.sort((a, b) => a.ticker.localeCompare(b.ticker)); break;
       case 'newest': filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded)); break;
       case 'oldest': filtered.sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded)); break;
