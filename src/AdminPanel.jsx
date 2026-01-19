@@ -158,12 +158,8 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
       const snap = await getDoc(predictionsRef);
       const currentList = snap.exists() ? (snap.data().list || []) : [];
 
-      // Generate new ID
-      const maxId = currentList.reduce((max, p) => {
-        const num = parseInt(p.id.replace('pred_', '')) || 0;
-        return Math.max(max, num);
-      }, 0);
-      const newId = `pred_${maxId + 1}`;
+      // Generate unique ID using timestamp
+      const newId = `pred_${Date.now()}`;
 
       // Create pools object
       const pools = {};
