@@ -5135,7 +5135,7 @@ export default function App() {
         {/* Logo */}
         <div className="flex justify-center mb-4">
           <img 
-            src="/stockism logo.png" 
+            src={darkMode ? "/stockism grey splatter.png" : "/stockism logo.png"}
             alt="Stockism" 
             className="h-[100px] sm:h-[115px] md:h-[200px] w-auto select-none pointer-events-none"
             draggable="false"
