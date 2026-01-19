@@ -1381,7 +1381,7 @@ const LeaderboardModal = ({ onClose, darkMode, currentUserCrew }) => {
         const q = query(
           collection(db, 'users'),
           orderBy('portfolioValue', 'desc'),
-          limit(100)
+          limit(50)
         );
         const snapshot = await getDocs(q);
         const leaderData = snapshot.docs.map((doc, index) => ({
