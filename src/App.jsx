@@ -849,7 +849,7 @@ const NewCharactersBoard = ({ prices, priceHistory, darkMode }) => {
 // PREDICTION CARD COMPONENT (Multi-Option with Auto-Payout)
 // ============================================
 
-const PredictionCard = ({ prediction, userBet, onBet, darkMode, isGuest }) => {
+const PredictionCard = ({ prediction, userBet, onBet, darkMode, isGuest, onRequestBet }) => {
   const [betAmount, setBetAmount] = useState(50);
   const [selectedOption, setSelectedOption] = useState(null);
   const [showBetUI, setShowBetUI] = useState(false);
@@ -884,12 +884,20 @@ const PredictionCard = ({ prediction, userBet, onBet, darkMode, isGuest }) => {
 
   const handlePlaceBet = () => {
     if (selectedOption && betAmount > 0) {
-      onBet(prediction.id, selectedOption, betAmount);
+      // Use request bet to show confirmation
+      if (onRequestBet) {
+        onRequestBet(prediction.id, selectedOption, betAmount, prediction.question);
+      } else {
+        onBet(prediction.id, selectedOption, betAmount);
+      }
       setShowBetUI(false);
       setSelectedOption(null);
       setBetAmount(50);
     }
   };
+
+  // Check if user already has a bet on this prediction
+  const hasExistingBet = !!userBet;
 
   const optionColors = [
     { bg: 'bg-green-600', border: 'border-green-600', text: 'text-green-500', fill: 'bg-green-500' },
@@ -957,7 +965,11 @@ const PredictionCard = ({ prediction, userBet, onBet, darkMode, isGuest }) => {
 
       {isActive && !isGuest && (
         <>
-          {!showBetUI ? (
+          {hasExistingBet ? (
+            <div className={`text-center py-2 text-sm ${mutedClass} bg-zinc-800/50 rounded-sm`}>
+              🔒 You've already placed a bet on this prediction
+            </div>
+          ) : !showBetUI ? (
             <button onClick={() => setShowBetUI(true)}
               className="w-full py-2 text-sm font-semibold uppercase bg-orange-600 hover:bg-orange-700 text-white rounded-sm">
               Place Bet
@@ -1369,26 +1381,6 @@ const PortfolioModal = ({ holdings, prices, portfolioHistory, currentValue, onCl
             </div>
           ) : (
             <>
-              {/* Portfolio Summary */}
-              <div className={`mb-4 p-3 rounded-sm ${darkMode ? 'bg-zinc-800/50' : 'bg-amber-100/50'}`}>
-                <div className="flex justify-between items-center">
-                  <span className={`text-sm ${mutedClass}`}>Total Holdings Value</span>
-                  <span className={`font-bold ${textClass}`}>{formatCurrency(totalValue)}</span>
-                </div>
-                <div className="flex justify-between items-center mt-1">
-                  <span className={`text-sm ${mutedClass}`}>Total Return</span>
-                  <span className={`font-semibold ${overallTotalReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {overallTotalReturn >= 0 ? '+' : ''}{formatCurrency(overallTotalReturn)} ({overallTotalReturnPercent >= 0 ? '+' : ''}{overallTotalReturnPercent.toFixed(2)}%)
-                  </span>
-                </div>
-                <div className="flex justify-between items-center mt-1">
-                  <span className={`text-sm ${mutedClass}`}>Today's Return</span>
-                  <span className={`font-semibold ${overallTodayReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {overallTodayReturn >= 0 ? '+' : ''}{formatCurrency(overallTodayReturn)}
-                  </span>
-                </div>
-              </div>
-
               {/* Holdings List */}
               <div className="space-y-2">
                 {portfolioItems.map(item => {
@@ -3833,6 +3825,8 @@ export default function App() {
   const [showAll, setShowAll] = useState(false);
   const [predictions, setPredictions] = useState([]);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [tradeConfirmation, setTradeConfirmation] = useState(null); // { ticker, action, amount, price, total }
+  const [betConfirmation, setBetConfirmation] = useState(null); // { predictionId, option, amount, question }
 
   // Listen to auth state
   useEffect(() => {
@@ -4419,7 +4413,33 @@ export default function App() {
     }
   }, [user, userData]);
 
-  // Handle trade
+  // Request trade confirmation
+  const requestTrade = useCallback((ticker, action, amount) => {
+    if (!user || !userData) {
+      setNotification({ type: 'info', message: 'Sign in to start trading!' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    
+    const asset = CHARACTER_MAP[ticker];
+    const price = prices[ticker] || asset?.basePrice || 0;
+    
+    // Calculate estimated total
+    let total = price * amount;
+    if (action === 'buy') {
+      const priceImpact = calculatePriceImpact(price, amount, getCharacterLiquidity(ticker));
+      const { ask } = getBidAskPrices(price + priceImpact);
+      total = ask * amount;
+    } else if (action === 'sell') {
+      const priceImpact = calculatePriceImpact(price, amount, getCharacterLiquidity(ticker));
+      const { bid } = getBidAskPrices(Math.max(MIN_PRICE, price - priceImpact));
+      total = bid * amount;
+    }
+    
+    setTradeConfirmation({ ticker, action, amount, price, total, name: asset?.name });
+  }, [user, userData, prices]);
+
+  // Handle trade (executes after confirmation)
   const handleTrade = useCallback(async (ticker, action, amount) => {
     if (!user || !userData) {
       setNotification({ type: 'info', message: 'Sign in to start trading!' });
@@ -5407,6 +5427,7 @@ export default function App() {
                     prediction={prediction}
                     userBet={getUserBet(prediction.id)}
                     onBet={handleBet}
+                    onRequestBet={(predictionId, option, amount, question) => setBetConfirmation({ predictionId, option, amount, question })}
                     darkMode={darkMode}
                     isGuest={isGuest}
                   />
@@ -5441,7 +5462,7 @@ export default function App() {
             <p className={`text-xs font-semibold uppercase ${mutedClass}`}>Portfolio Value</p>
             <p className={`text-2xl font-bold ${textClass}`}>{formatCurrency(portfolioValue)}</p>
             <p className={`text-xs ${portfolioValue >= STARTING_CASH ? 'text-green-500' : 'text-red-500'}`}>
-              {portfolioValue >= STARTING_CASH ? '▲' : '▼'} {formatChange(((portfolioValue - STARTING_CASH) / STARTING_CASH) * 100)} from start
+              {portfolioValue >= STARTING_CASH ? '▲' : '▼'} {formatCurrency(Math.abs(portfolioValue - STARTING_CASH))} ({formatChange(((portfolioValue - STARTING_CASH) / STARTING_CASH) * 100)}) from start
             </p>
           </div>
           <div className={`${cardClass} border rounded-sm p-4 cursor-pointer hover:border-orange-600`} onClick={() => !isGuest && setShowPortfolio(true)}>
@@ -5500,7 +5521,7 @@ export default function App() {
               sentiment={getSentiment(character.ticker)}
               holdings={activeUserData.holdings?.[character.ticker] || 0}
               shortPosition={activeUserData.shorts?.[character.ticker]}
-              onTrade={handleTrade}
+              onTrade={requestTrade}
               onViewChart={setSelectedCharacter}
               priceHistory={priceHistory}
               darkMode={darkMode}
@@ -5616,7 +5637,7 @@ export default function App() {
           portfolioHistory={userData?.portfolioHistory || []}
           currentValue={portfolioValue}
           onClose={() => setShowPortfolio(false)}
-          onTrade={handleTrade}
+          onTrade={requestTrade}
           darkMode={darkMode}
           costBasis={userData?.costBasis || {}}
           priceHistory={priceHistory}
@@ -5630,6 +5651,110 @@ export default function App() {
           onClose={() => setSelectedCharacter(null)}
           darkMode={darkMode}
         />
+      )}
+
+      {/* Trade Confirmation Modal */}
+      {tradeConfirmation && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]" onClick={() => setTradeConfirmation(null)}>
+          <div 
+            className={`w-full max-w-sm ${darkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-amber-200'} border rounded-sm shadow-xl p-5`}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-zinc-100' : 'text-slate-900'}`}>
+              Confirm {tradeConfirmation.action === 'buy' ? 'Purchase' : tradeConfirmation.action === 'sell' ? 'Sale' : 'Short'}
+            </h3>
+            <div className={`space-y-2 mb-5 ${darkMode ? 'text-zinc-300' : 'text-slate-700'}`}>
+              <div className="flex justify-between">
+                <span>Stock:</span>
+                <span className="font-semibold text-orange-500">${tradeConfirmation.ticker}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Action:</span>
+                <span className={`font-semibold ${tradeConfirmation.action === 'buy' ? 'text-green-500' : 'text-red-500'}`}>
+                  {tradeConfirmation.action.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Shares:</span>
+                <span className="font-semibold">{tradeConfirmation.amount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Est. Price/Share:</span>
+                <span className="font-semibold">{formatCurrency(tradeConfirmation.total / tradeConfirmation.amount)}</span>
+              </div>
+              <div className={`flex justify-between pt-2 border-t ${darkMode ? 'border-zinc-700' : 'border-amber-200'}`}>
+                <span className="font-semibold">Est. Total:</span>
+                <span className={`font-bold ${tradeConfirmation.action === 'buy' ? 'text-red-500' : 'text-green-500'}`}>
+                  {tradeConfirmation.action === 'buy' ? '-' : '+'}{formatCurrency(tradeConfirmation.total)}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setTradeConfirmation(null)}
+                className={`flex-1 py-2 rounded-sm font-semibold ${darkMode ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  handleTrade(tradeConfirmation.ticker, tradeConfirmation.action, tradeConfirmation.amount);
+                  setTradeConfirmation(null);
+                }}
+                className={`flex-1 py-2 rounded-sm font-semibold text-white ${
+                  tradeConfirmation.action === 'buy' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                Confirm {tradeConfirmation.action === 'buy' ? 'Buy' : 'Sell'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bet Confirmation Modal */}
+      {betConfirmation && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]" onClick={() => setBetConfirmation(null)}>
+          <div 
+            className={`w-full max-w-sm ${darkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-amber-200'} border rounded-sm shadow-xl p-5`}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-zinc-100' : 'text-slate-900'}`}>
+              Confirm Bet
+            </h3>
+            <div className={`space-y-2 mb-5 ${darkMode ? 'text-zinc-300' : 'text-slate-700'}`}>
+              <div className="mb-3">
+                <span className={`text-sm ${darkMode ? 'text-zinc-400' : 'text-slate-500'}`}>Question:</span>
+                <p className={`font-medium ${darkMode ? 'text-zinc-100' : 'text-slate-900'}`}>{betConfirmation.question}</p>
+              </div>
+              <div className="flex justify-between">
+                <span>Your Pick:</span>
+                <span className="font-semibold text-orange-500">"{betConfirmation.option}"</span>
+              </div>
+              <div className={`flex justify-between pt-2 border-t ${darkMode ? 'border-zinc-700' : 'border-amber-200'}`}>
+                <span className="font-semibold">Bet Amount:</span>
+                <span className="font-bold text-red-500">-{formatCurrency(betConfirmation.amount)}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBetConfirmation(null)}
+                className={`flex-1 py-2 rounded-sm font-semibold ${darkMode ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  handleBet(betConfirmation.predictionId, betConfirmation.option, betConfirmation.amount);
+                  setBetConfirmation(null);
+                }}
+                className="flex-1 py-2 rounded-sm font-semibold text-white bg-orange-600 hover:bg-orange-700"
+              >
+                Place Bet
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
