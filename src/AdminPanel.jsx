@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { doc, updateDoc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import { CHARACTERS } from './characters';
 
@@ -75,7 +75,8 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
       return;
     }
 
-    const currentPrice = prices[selectedTicker];
+    const character = CHARACTERS.find(c => c.ticker === selectedTicker);
+    const currentPrice = prices[selectedTicker] || character?.basePrice;
     if (!currentPrice) {
       showMessage('error', 'Could not get current price');
       return;
@@ -107,11 +108,11 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
     try {
       const marketRef = doc(db, 'market', 'current');
       const snap = await getDoc(marketRef);
+      const now = Date.now();
       
       if (snap.exists()) {
         const data = snap.data();
         const currentHistory = data.priceHistory?.[selectedTicker] || [];
-        const now = Date.now();
         
         // Add to price history for natural chart appearance
         const updatedHistory = [...currentHistory, { timestamp: now, price: targetPrice }].slice(-1000);
@@ -120,18 +121,24 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
           [`prices.${selectedTicker}`]: targetPrice,
           [`priceHistory.${selectedTicker}`]: updatedHistory
         });
-
-        const character = CHARACTERS.find(c => c.ticker === selectedTicker);
-        const changePercent = ((targetPrice - currentPrice) / currentPrice * 100).toFixed(1);
-        const direction = targetPrice > currentPrice ? '📈' : '📉';
-        
-        showMessage('success', `${direction} ${character?.name || selectedTicker}: $${currentPrice.toFixed(2)} → $${targetPrice.toFixed(2)} (${changePercent > 0 ? '+' : ''}${changePercent}%)`);
-        
-        // Reset form
-        setSelectedTicker('');
-        setNewPrice('');
-        setPercentChange('');
+      } else {
+        // Market doc doesn't exist, create it with this price
+        await setDoc(marketRef, {
+          prices: { [selectedTicker]: targetPrice },
+          priceHistory: { [selectedTicker]: [{ timestamp: now, price: targetPrice }] }
+        }, { merge: true });
       }
+
+      const character = CHARACTERS.find(c => c.ticker === selectedTicker);
+      const changePercent = ((targetPrice - currentPrice) / currentPrice * 100).toFixed(1);
+      const direction = targetPrice > currentPrice ? '📈' : '📉';
+      
+      showMessage('success', `${direction} ${character?.name || selectedTicker}: $${currentPrice.toFixed(2)} → $${targetPrice.toFixed(2)} (${changePercent > 0 ? '+' : ''}${changePercent}%)`);
+      
+      // Reset form
+      setSelectedTicker('');
+      setNewPrice('');
+      setPercentChange('');
     } catch (err) {
       console.error(err);
       showMessage('error', 'Failed to adjust price');
