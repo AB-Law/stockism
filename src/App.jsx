@@ -1829,8 +1829,14 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) 
             <button onClick={onClose} className={`p-2 ${mutedClass} hover:text-teal-600 text-xl`}>×</button>
           </div>
           {currentCrew && (
-            <p className={`text-sm ${mutedClass} mt-1`}>
-              Current: <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.emblem} {CREW_MAP[currentCrew]?.name}</span>
+            <p className={`text-sm ${mutedClass} mt-1 flex items-center gap-1`}>
+              Current: 
+              {CREW_MAP[currentCrew]?.icon ? (
+                <img src={CREW_MAP[currentCrew]?.icon} alt="" className="w-4 h-4 object-contain inline" />
+              ) : (
+                <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.emblem}</span>
+              )}
+              <span style={{ color: CREW_MAP[currentCrew]?.color }}>{CREW_MAP[currentCrew]?.name}</span>
             </p>
           )}
           {!currentCrew && (
@@ -1846,7 +1852,7 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) 
             <p className="text-amber-400 text-sm text-center">
               ⚠️ <strong>Warning:</strong> Leaving a crew costs <strong>30% of your entire portfolio</strong>
               <br />
-              <span className={`text-xs ${mutedClass}`}>Half your cash and half your shares will be taken if you ever leave.</span>
+              <span className={`text-xs ${mutedClass}`}>Roughly 1/3 of your cash and shares will be taken if you ever leave.</span>
             </p>
           </div>
         )}
@@ -1860,10 +1866,10 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) 
                 You will lose approximately {formatCurrency(penaltyAmount)}
               </p>
               <p className={`text-xs ${mutedClass}`}>
-                Half of your cash and half of each stock you own will be taken.
+                Roughly 1/3 of your cash and shares will be taken.
               </p>
             </div>
-            <p className={`text-sm ${mutedClass} mb-6`}>You can rejoin any crew later (no cost to join).</p>
+            <p className={`text-sm ${mutedClass} mb-6`}>You can rejoin any crew later.</p>
             
             <div className="flex gap-3 justify-center">
               <button
@@ -1899,7 +1905,7 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) 
                   You will lose approximately {formatCurrency(penaltyAmount)}
                 </p>
                 <p className={`text-xs ${mutedClass}`}>
-                  Half of your cash and half of each stock you own will be taken.
+                  Roughly 1/3 of your cash and shares will be taken.
                 </p>
               </div>
             ) : (
