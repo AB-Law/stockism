@@ -1844,7 +1844,7 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) 
         {!confirming && !leavingCrew && (
           <div className={`p-3 ${darkMode ? 'bg-amber-900/30' : 'bg-amber-100'} border-b border-amber-500/30`}>
             <p className="text-amber-400 text-sm text-center">
-              ⚠️ <strong>Warning:</strong> Leaving a crew costs <strong>50% of your entire portfolio</strong>
+              ⚠️ <strong>Warning:</strong> Leaving a crew costs <strong>30% of your entire portfolio</strong>
               <br />
               <span className={`text-xs ${mutedClass}`}>Half your cash and half your shares will be taken if you ever leave.</span>
             </p>
@@ -1909,7 +1909,7 @@ const CrewSelectionModal = ({ onClose, onSelect, onLeave, darkMode, userData }) 
                 </p>
                 <div className={`p-3 rounded-sm ${darkMode ? 'bg-amber-900/20' : 'bg-amber-50'} border border-amber-500/30`}>
                   <p className="text-amber-400 text-sm">
-                    ⚠️ <strong>Note:</strong> If you ever leave this crew, you'll lose <strong>50% of your portfolio</strong>.
+                    ⚠️ <strong>Note:</strong> If you ever leave this crew, you'll lose <strong>30% of your portfolio</strong>.
                   </p>
                   <p className={`text-xs ${mutedClass} mt-1`}>
                     You don't have to join a crew — this is optional!
@@ -3661,8 +3661,9 @@ export default function App() {
       
       // Only charge penalty if LEAVING a crew to join another (switching)
       if (isSwitch && userData.crew) {
-        // Take half of cash and half of each holding
-        const newCash = Math.floor(userData.cash / 2);
+        // Take 30% of cash and 30% of each holding
+        const penaltyRate = 0.3;
+        const newCash = Math.floor(userData.cash * (1 - penaltyRate));
         const cashTaken = userData.cash - newCash;
         
         const newHoldings = {};
@@ -3670,7 +3671,8 @@ export default function App() {
         
         Object.entries(userData.holdings || {}).forEach(([ticker, shares]) => {
           if (shares > 0) {
-            const sharesToTake = Math.ceil(shares / 2);
+            // Take 30% of shares, rounding to nearest (round up if .5 or more)
+            const sharesToTake = Math.round(shares * penaltyRate);
             const sharesToKeep = shares - sharesToTake;
             newHoldings[ticker] = sharesToKeep;
             holdingsValueTaken += sharesToTake * (prices[ticker] || 0);
@@ -3688,7 +3690,7 @@ export default function App() {
         
         setNotification({ 
           type: 'success', 
-          message: `Switched to ${crew.name}! Lost ${formatCurrency(totalTaken)} (50% penalty)`
+          message: `Switched to ${crew.name}! Lost ${formatCurrency(totalTaken)} (30% penalty)`
         });
       } else {
         // Joining a crew (no existing crew) - no cost
@@ -3717,9 +3719,10 @@ export default function App() {
       const userRef = doc(db, 'users', user.uid);
       const oldCrew = CREW_MAP[userData.crew];
       
-      // Calculate 50% penalty from portfolio
-      // Take half of cash and half of each holding
-      const newCash = Math.floor(userData.cash / 2);
+      // Calculate 30% penalty from portfolio
+      // Take 30% of cash and 30% of each holding
+      const penaltyRate = 0.3;
+      const newCash = Math.floor(userData.cash * (1 - penaltyRate));
       const cashTaken = userData.cash - newCash;
       
       const newHoldings = {};
@@ -3728,7 +3731,8 @@ export default function App() {
       
       Object.entries(userData.holdings || {}).forEach(([ticker, shares]) => {
         if (shares > 0) {
-          const sharesToTake = Math.ceil(shares / 2); // Take half (round up)
+          // Take 30% of shares, rounding to nearest (round up if .5 or more)
+          const sharesToTake = Math.round(shares * penaltyRate);
           const sharesToKeep = shares - sharesToTake;
           newHoldings[ticker] = sharesToKeep;
           holdingsTaken[ticker] = sharesToTake;
@@ -3754,7 +3758,7 @@ export default function App() {
       
       setNotification({ 
         type: 'success', 
-        message: `Left ${oldCrew?.name || 'crew'}. Lost ${formatCurrency(totalTaken)} (50% penalty)`
+        message: `Left ${oldCrew?.name || 'crew'}. Lost ${formatCurrency(totalTaken)} (30% penalty)`
       });
       setTimeout(() => setNotification(null), 4000);
     } catch (err) {
