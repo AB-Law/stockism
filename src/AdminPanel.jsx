@@ -797,9 +797,13 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
           cash: data.cash || 0,
           portfolioValue: data.portfolioValue || 0,
           holdings: data.holdings || {},
+          shorts: data.shorts || {},
           bets: data.bets || {},
           totalTrades: data.totalTrades || 0,
-          isAdmin: data.isAdmin || false
+          isAdmin: data.isAdmin || false,
+          marginEnabled: data.marginEnabled || false,
+          marginUsed: data.marginUsed || 0,
+          activeLoan: data.activeLoan || null
         });
       });
       
@@ -1920,6 +1924,25 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                     </div>
                   </div>
 
+                  {/* Margin/Loan Info */}
+                  {(selectedUser.marginEnabled || selectedUser.activeLoan) && (
+                    <div className={`p-2 rounded mb-4 ${darkMode ? 'bg-amber-900/30' : 'bg-amber-50'}`}>
+                      <h4 className={`text-xs font-semibold uppercase text-amber-500 mb-2`}>Debt Info</h4>
+                      {selectedUser.marginEnabled && (
+                        <div className="text-sm flex justify-between">
+                          <span className={mutedClass}>Margin Used:</span>
+                          <span className="text-amber-500 font-bold">${(selectedUser.marginUsed || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {selectedUser.activeLoan && (
+                        <div className="text-sm flex justify-between">
+                          <span className={mutedClass}>Active Loan:</span>
+                          <span className="text-red-500 font-bold">${selectedUser.activeLoan.principal?.toFixed(2) || '?'}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Holdings */}
                   {Object.keys(selectedUser.holdings).length > 0 && (
                     <div className="mb-4">
@@ -1932,6 +1955,29 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                             <div key={ticker} className={`text-sm flex justify-between ${textClass}`}>
                               <span>{ticker}</span>
                               <span>{shareCount} shares</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Shorts */}
+                  {Object.keys(selectedUser.shorts).length > 0 && (
+                    <div className="mb-4">
+                      <h4 className={`text-xs font-semibold uppercase text-red-400 mb-2`}>Short Positions</h4>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {Object.entries(selectedUser.shorts).map(([ticker, shortData]) => {
+                          if (!shortData || shortData.shares <= 0) return null;
+                          return (
+                            <div key={ticker} className={`text-sm flex justify-between ${textClass}`}>
+                              <span className="text-red-400">{ticker}</span>
+                              <span>
+                                {shortData.shares} shares @ ${shortData.entryPrice?.toFixed(2) || '?'}
+                                <span className={`ml-2 text-xs ${mutedClass}`}>
+                                  (collateral: ${shortData.collateral?.toFixed(2) || '?'})
+                                </span>
+                              </span>
                             </div>
                           );
                         })}
