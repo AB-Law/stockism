@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { CREWS } from './crews';
 
 const CrewProfilePanel = ({ crew, prices, onClose, darkMode }) => {
   const [allUserData, setAllUserData] = useState(null);
@@ -14,10 +13,15 @@ const CrewProfilePanel = ({ crew, prices, onClose, darkMode }) => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
+        // NOTE: Only store non-sensitive, aggregate-friendly fields from each user document.
+        // Firestore security rules for the `users` collection must restrict reads so that
+        // only public fields required here (e.g. `holdings`) are readable by this client.
         const usersSnapshot = await getDocs(collection(db, 'users'));
         const users = {};
         usersSnapshot.forEach((doc) => {
-          users[doc.id] = doc.data();
+          const data = doc.data();
+          // Only keep the holdings field to avoid using or exposing other user data
+          users[doc.id] = { holdings: data?.holdings || {} };
         });
         setAllUserData(users);
       } catch (error) {
@@ -112,7 +116,7 @@ const CrewProfilePanel = ({ crew, prices, onClose, darkMode }) => {
               {crew.icon && (
                 <img 
                   src={crew.icon} 
-                  alt={crew.name} 
+                  alt={`${crew.name} crew icon`} 
                   className="w-16 h-16 rounded-lg object-cover"
                   style={{ border: `2px solid ${crew.color}` }}
                 />

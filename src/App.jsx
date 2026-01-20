@@ -24,7 +24,7 @@ import {
 } from 'firebase/firestore';
 import { auth, googleProvider, twitterProvider, db } from './firebase';
 import { CHARACTERS, CHARACTER_MAP } from './characters';
-import { CREWS, CREW_MAP, SHOP_PINS, SHOP_PINS_LIST, DAILY_MISSIONS, PIN_SLOT_COSTS, CREW_DIVIDEND_RATE, getCrewByTicker } from './crews';
+import { CREWS, CREW_MAP, SHOP_PINS, SHOP_PINS_LIST, DAILY_MISSIONS, PIN_SLOT_COSTS, getCrewByTicker } from './crews';
 import AdminPanel from './AdminPanel';
 import CrewProfilePanel from './CrewProfilePanel';
 import CrewLeaderboardModal from './CrewLeaderboardModal';
@@ -4150,8 +4150,10 @@ const CharacterCard = ({ character, price, priceChange, sentiment, holdings, sho
   // Calculate short P/L if shorted
   const shortPL = shorted ? (shortPosition.entryPrice - price) * shortPosition.shares : 0;
 
-  // Get crew for this character
-  const crew = getCrewByTicker(character.ticker);
+  // Get crew for this character (guard against undefined getCrewByTicker)
+  const crew = typeof getCrewByTicker === 'function' 
+    ? getCrewByTicker(character.ticker) 
+    : null;
 
   return (
     <div className={`${cardClass} border rounded-sm p-4 transition-all`}>

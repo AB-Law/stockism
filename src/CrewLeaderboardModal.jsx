@@ -14,10 +14,16 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
+        // NOTE: This component only needs aggregated, non-sensitive portfolio data.
+        // Firestore security rules for the 'users' collection MUST ensure that:
+        // - Only non-sensitive fields (e.g., 'holdings') are readable by this client
+        // - Private user information (email, profile, PII, etc.) is not exposed
         const usersSnapshot = await getDocs(collection(db, 'users'));
         const users = {};
         usersSnapshot.forEach((doc) => {
-          users[doc.id] = doc.data();
+          const data = doc.data();
+          // Only keep the holdings field to avoid using or exposing other user data
+          users[doc.id] = { holdings: data?.holdings || {} };
         });
         setAllUserData(users);
       } catch (error) {
@@ -46,29 +52,31 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
   const crewLeaderboard = useMemo(() => {
     if (!prices || !allUserData) return [];
 
+    // First pass: aggregate holdings by ticker across all users (O(users))
+    const holdingsByTicker = {};
+    Object.values(allUserData).forEach(userData => {
+      if (userData.holdings) {
+        Object.entries(userData.holdings).forEach(([ticker, amount]) => {
+          holdingsByTicker[ticker] = (holdingsByTicker[ticker] || 0) + amount;
+        });
+      }
+    });
+
+    // Second pass: calculate crew portfolios using aggregated holdings (O(crews*members))
     const crewPortfolios = Object.values(CREWS).map(crew => {
       let totalValue = 0;
       let totalPriceChange = 0;
       let validPriceChanges = 0;
       let totalHoldings = 0;
       
-      // Sum up the value of all crew member stocks held by all players
       crew.members.forEach(ticker => {
         const price = prices[ticker] || 0;
         const basePrice = prices[`${ticker}_base`] || price;
         const priceChange = basePrice > 0 ? (price - basePrice) / basePrice : 0;
         
-        // Count total holdings across all users
-        let tickerHoldings = 0;
-        Object.values(allUserData).forEach(userData => {
-          if (userData.holdings && userData.holdings[ticker]) {
-            const holdings = userData.holdings[ticker];
-            tickerHoldings += holdings;
-            totalValue += price * holdings;
-          }
-        });
-
+        const tickerHoldings = holdingsByTicker[ticker] || 0;
         totalHoldings += tickerHoldings;
+        totalValue += price * tickerHoldings;
         
         if (!isNaN(priceChange) && isFinite(priceChange)) {
           totalPriceChange += priceChange;
@@ -89,6 +97,17 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
     // Sort by total value descending
     return crewPortfolios.sort((a, b) => b.totalValue - a.totalValue);
   }, [prices, allUserData]);
+
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={onClose}>
@@ -112,6 +131,7 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
             </div>
             <button
               onClick={onClose}
+              aria-label="Close crew leaderboard"
               className={`px-4 py-2 text-sm font-semibold rounded-sm ${
                 darkMode ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700' : 'bg-slate-100 text-zinc-600 hover:bg-slate-200'
               }`}
@@ -135,10 +155,17 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
               const isUp = avgPriceChange >= 0;
               
               return (
-                <div
+                <button
                   key={crew.id}
                   onClick={() => onCrewClick(crew)}
-                  className={`flex items-center gap-4 p-4 rounded-lg cursor-pointer transition-all ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onCrewClick(crew);
+                    }
+                  }}
+                  aria-label={`View ${crew.name} crew profile`}
+                  className={`w-full flex items-center gap-4 p-4 rounded-lg cursor-pointer transition-all text-left ${
                     darkMode 
                       ? 'hover:bg-zinc-800 bg-zinc-850 border border-zinc-800' 
                       : 'hover:bg-amber-50 bg-slate-50 border border-amber-200'
@@ -162,7 +189,7 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
                     {crew.icon && (
                       <img 
                         src={crew.icon} 
-                        alt={crew.name} 
+                        alt={`${crew.name} crew icon`} 
                         className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
                         style={{ border: `2px solid ${crew.color}` }}
                       />
@@ -195,7 +222,7 @@ const CrewLeaderboardModal = ({ prices, onCrewClick, onClose, darkMode }) => {
                       {isUp ? '▲' : '▼'} {formatChange(avgPriceChange)}
                     </p>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
