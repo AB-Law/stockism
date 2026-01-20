@@ -4097,7 +4097,7 @@ const UsernameModal = ({ user, onComplete, darkMode }) => {
 // CHARACTER CARD
 // ============================================
 
-const CharacterCard = ({ character, price, priceChange, sentiment, holdings, shortPosition, onTrade, onViewChart, priceHistory, darkMode }) => {
+const CharacterCard = ({ character, price, priceChange, sentiment, holdings, shortPosition, onTrade, onViewChart, priceHistory, darkMode, isFavorite, onToggleFavorite, isGuest }) => {
   const [showTrade, setShowTrade] = useState(false);
   const [tradeAmount, setTradeAmount] = useState(1);
   const [tradeMode, setTradeMode] = useState('normal'); // 'normal' or 'short'
@@ -4152,10 +4152,19 @@ const CharacterCard = ({ character, price, priceChange, sentiment, holdings, sho
     <div className={`${cardClass} border rounded-sm p-4 transition-all`}>
       <div className="cursor-pointer" onClick={() => !showTrade && onViewChart(character)}>
         <div className="flex justify-between items-start mb-2">
-          <div>
+          <div className="flex-1">
             <div className="flex items-center gap-1">
               <p className="text-orange-600 font-mono text-sm font-semibold">${character.ticker}</p>
               {isETF && <span className="text-xs bg-purple-600 text-white px-1 rounded">ETF</span>}
+              {!isGuest && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(character.ticker); }}
+                  className={`ml-1 text-sm transition-colors ${isFavorite ? 'text-orange-500' : mutedClass} hover:text-orange-500`}
+                  title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  {isFavorite ? '❤️' : '🤍'}
+                </button>
+              )}
             </div>
             <p className={`text-xs ${mutedClass} mt-0.5`}>{character.name}</p>
             {character.description && <p className={`text-xs ${mutedClass}`}>{character.description}</p>}
@@ -4191,7 +4200,7 @@ const CharacterCard = ({ character, price, priceChange, sentiment, holdings, sho
             darkMode ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-amber-200 text-zinc-600 hover:bg-amber-50'
           }`}
         >
-          Trade
+          {isGuest ? 'Sign in to Trade' : 'Trade'}
         </button>
       ) : (
         <div className="space-y-2" onClick={e => e.stopPropagation()}>
@@ -4311,6 +4320,7 @@ export default function App() {
   const [needsUsername, setNeedsUsername] = useState(false);
   const [sortBy, setSortBy] = useState('price-high');
   const [searchQuery, setSearchQuery] = useState('');
+  const [marketFilter, setMarketFilter] = useState('all'); // 'all', 'favorites', 'gainers', 'losers', 'volatile', 'holdings'
   const [currentPage, setCurrentPage] = useState(1);
   const [showAll, setShowAll] = useState(false);
   const [predictions, setPredictions] = useState([]);
@@ -4948,7 +4958,26 @@ export default function App() {
     }
   }, [user, userData]);
 
-  // Request trade confirmation
+  // Toggle favorite character
+  const toggleFavorite = useCallback(async (ticker) => {
+    if (!user || !userData) return;
+    
+    const userRef = doc(db, 'users', user.uid);
+    const currentFavorites = userData?.favorites || [];
+    const isFavorite = currentFavorites.includes(ticker);
+    
+    if (isFavorite) {
+      await updateDoc(userRef, {
+        favorites: currentFavorites.filter(t => t !== ticker)
+      });
+    } else {
+      await updateDoc(userRef, {
+        favorites: arrayUnion(ticker)
+      });
+    }
+  }, [user, userData]);
+
+
   const requestTrade = useCallback((ticker, action, amount) => {
     if (!user || !userData) {
       setNotification({ type: 'info', message: 'Sign in to start trading!' });
@@ -6150,11 +6179,53 @@ export default function App() {
 
   // Filter and sort
   const filteredCharacters = useMemo(() => {
+    // Calculate 24h price changes and volatility for all characters
+    const priceChanges = {};
+    const volatilities = {};
+    CHARACTERS.forEach(c => {
+      priceChanges[c.ticker] = get24hChange(c.ticker);
+      
+      const history = priceHistory[c.ticker] || [];
+      const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
+      const recentHistory = history.filter(h => h.timestamp >= dayAgo);
+      
+      if (recentHistory.length >= 2) {
+        const prices = recentHistory.map(h => h.price);
+        const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+        const variance = prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
+        volatilities[c.ticker] = Math.sqrt(variance) / mean; // Coefficient of variation
+      } else {
+        volatilities[c.ticker] = c.volatility || 0;
+      }
+    });
+    
     let filtered = CHARACTERS.filter(c => {
       // Search filter
       const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.ticker.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
+      const favorites = activeUserData.favorites || [];
+      switch (marketFilter) {
+        case 'favorites':
+          if (!favorites.includes(c.ticker)) return false;
+          break;
+        case 'gainers':
+          if (priceChanges[c.ticker] <= 0) return false;
+          break;
+        case 'losers':
+          if (priceChanges[c.ticker] >= 0) return false;
+          break;
+        case 'volatile':
+          const sortedVolatilities = Object.values(volatilities).sort((a, b) => b - a);
+          const threshold = sortedVolatilities[Math.floor(sortedVolatilities.length * 0.2)] || 0;
+          if (volatilities[c.ticker] < threshold) return false;
+          break;
+        case 'holdings':
+          if ((activeUserData.holdings?.[c.ticker] || 0) === 0) return false;
+          break;
+        default:
+          break;
+      }
       
       // Hide characters that require IPO and haven't completed one yet
       if (c.ipoRequired) {
@@ -6169,12 +6240,6 @@ export default function App() {
       return true;
     });
 
-    // Calculate 24h price changes from actual history
-    const priceChanges = {};
-    CHARACTERS.forEach(c => {
-      priceChanges[c.ticker] = get24hChange(c.ticker);
-    });
-    
     // Calculate trade activity (number of price history entries) for "active" sort
     const getTradeActivity = (ticker) => {
       const history = priceHistory[ticker] || [];
@@ -6221,9 +6286,12 @@ export default function App() {
       case 'ticker': filtered.sort((a, b) => a.ticker.localeCompare(b.ticker)); break;
       case 'newest': filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded)); break;
       case 'oldest': filtered.sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded)); break;
+      case 'gainers': filtered.sort((a, b) => priceChanges[b.ticker] - priceChanges[a.ticker]); break;
+      case 'losers': filtered.sort((a, b) => priceChanges[a.ticker] - priceChanges[b.ticker]); break;
+      case 'volatile': filtered.sort((a, b) => volatilities[b.ticker] - volatilities[a.ticker]); break;
     }
     return filtered;
-  }, [searchQuery, sortBy, prices, priceHistory, get24hChange, activeIPOs, ipoRestrictedTickers]);
+  }, [searchQuery, sortBy, marketFilter, prices, priceHistory, get24hChange, activeIPOs, ipoRestrictedTickers, activeUserData]);
 
   const totalPages = Math.ceil(filteredCharacters.length / ITEMS_PER_PAGE);
   const displayedCharacters = showAll ? filteredCharacters : filteredCharacters.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -6446,6 +6514,37 @@ export default function App() {
           </div>
         </div>
 
+        {/* Filter Tabs */}
+        <div className={`${cardClass} border rounded-sm p-2 mb-4`}>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'favorites', label: '⭐ Favorites', requiresAuth: true },
+              { id: 'gainers', label: '📈 Gainers' },
+              { id: 'losers', label: '📉 Losers' },
+              { id: 'volatile', label: '⚡ Most Volatile' },
+              { id: 'holdings', label: '💼 Your Holdings', requiresAuth: true }
+            ].map(filter => {
+              if (filter.requiresAuth && isGuest) return null;
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => { setMarketFilter(filter.id); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-sm transition-colors ${
+                    marketFilter === filter.id
+                      ? 'bg-orange-600 text-white'
+                      : darkMode
+                      ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                      : 'bg-slate-100 text-zinc-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Controls */}
         <div className={`${cardClass} border rounded-sm p-4 mb-4`}>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -6457,6 +6556,9 @@ export default function App() {
               <option value="ticker">Ticker A-Z</option>
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
+              {marketFilter === 'gainers' && <option value="gainers">Biggest Gainers</option>}
+              {marketFilter === 'losers' && <option value="losers">Biggest Losers</option>}
+              {marketFilter === 'volatile' && <option value="volatile">Most Volatile</option>}
             </select>
             <input type="text" placeholder="Search..." value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
@@ -6494,6 +6596,9 @@ export default function App() {
               onViewChart={setSelectedCharacter}
               priceHistory={priceHistory}
               darkMode={darkMode}
+              isFavorite={(activeUserData.favorites || []).includes(character.ticker)}
+              onToggleFavorite={toggleFavorite}
+              isGuest={isGuest}
             />
           ))}
         </div>
