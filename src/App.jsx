@@ -6190,9 +6190,9 @@ export default function App() {
       const recentHistory = history.filter(h => h.timestamp >= dayAgo);
       
       if (recentHistory.length >= 2) {
-        const prices = recentHistory.map(h => h.price);
-        const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
-        const variance = prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
+        const priceValues = recentHistory.map(h => h.price);
+        const mean = priceValues.reduce((a, b) => a + b, 0) / priceValues.length;
+        const variance = priceValues.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / priceValues.length;
         volatilities[c.ticker] = Math.sqrt(variance) / mean; // Coefficient of variation
       } else {
         volatilities[c.ticker] = c.volatility || 0;
