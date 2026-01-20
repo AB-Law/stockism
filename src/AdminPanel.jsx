@@ -420,6 +420,16 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
       let totalBetsPlaced = 0;
       let totalTradesAllTime = 0;
       
+      // 24h activity tracking
+      let trades24h = 0;
+      let volume24h = 0; // Total cash moved in trades
+      let buys24h = 0;
+      let sells24h = 0;
+      let shorts24h = 0;
+      let checkins24h = 0;
+      let bets24h = 0;
+      const tickerVolume24h = {}; // Volume per ticker
+      
       // Holdings by character
       const holdingsByTicker = {};
       CHARACTERS.forEach(c => { holdingsByTicker[c.ticker] = 0; });
@@ -468,6 +478,37 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
         if (data.crew) {
           crewCounts[data.crew] = (crewCounts[data.crew] || 0) + 1;
         }
+        
+        // 24h transaction log analysis
+        const transactionLog = data.transactionLog || [];
+        transactionLog.forEach(tx => {
+          if (tx.timestamp > oneDayAgo) {
+            if (tx.type === 'BUY') {
+              trades24h++;
+              buys24h++;
+              volume24h += tx.totalCost || 0;
+              if (tx.ticker) {
+                tickerVolume24h[tx.ticker] = (tickerVolume24h[tx.ticker] || 0) + (tx.totalCost || 0);
+              }
+            } else if (tx.type === 'SELL') {
+              trades24h++;
+              sells24h++;
+              volume24h += tx.totalRevenue || 0;
+              if (tx.ticker) {
+                tickerVolume24h[tx.ticker] = (tickerVolume24h[tx.ticker] || 0) + (tx.totalRevenue || 0);
+              }
+            } else if (tx.type === 'SHORT_OPEN' || tx.type === 'SHORT_CLOSE') {
+              trades24h++;
+              shorts24h++;
+              volume24h += tx.marginRequired || tx.cashBack || 0;
+            } else if (tx.type === 'CHECKIN') {
+              checkins24h++;
+            } else if (tx.type === 'BET') {
+              bets24h++;
+              volume24h += tx.amount || 0;
+            }
+          }
+        });
       });
       
       // Calculate total market cap (all shares * current prices)
@@ -494,6 +535,12 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
       const topGainers = priceChanges.slice(0, 5);
       const topLosers = priceChanges.slice(-5).reverse();
       
+      // Top traded tickers in 24h
+      const topTraded24h = Object.entries(tickerVolume24h)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([ticker, volume]) => ({ ticker, volume }));
+      
       setMarketStats({
         totalUsers,
         activeUsers24h,
@@ -510,6 +557,15 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
         topGainers,
         topLosers,
         crewCounts,
+        // 24h activity
+        trades24h,
+        volume24h,
+        buys24h,
+        sells24h,
+        shorts24h,
+        checkins24h,
+        bets24h,
+        topTraded24h,
         lastUpdated: now
       });
     } catch (err) {
@@ -2303,14 +2359,71 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                   {/* Activity Stats */}
                   <div className={`p-4 rounded-sm ${darkMode ? 'bg-slate-800' : 'bg-white'} border ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                     <h3 className={`font-semibold mb-3 ${textClass}`}>📊 Activity</h3>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className={mutedClass}>Total Trades (All Time):</span>
-                        <span className={`font-bold ${textClass}`}>{marketStats.totalTradesAllTime.toLocaleString()}</span>
+                    
+                    {/* 24h Activity */}
+                    <div className={`p-3 rounded-sm mb-3 ${darkMode ? 'bg-cyan-900/20' : 'bg-cyan-50'}`}>
+                      <h4 className="text-cyan-500 font-semibold text-sm mb-2">Last 24 Hours</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-cyan-500">{marketStats.trades24h || 0}</p>
+                          <p className={`text-xs ${mutedClass}`}>Trades</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-green-500">${(marketStats.volume24h || 0).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
+                          <p className={`text-xs ${mutedClass}`}>Volume</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-amber-500">{marketStats.checkins24h || 0}</p>
+                          <p className={`text-xs ${mutedClass}`}>Check-ins</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-purple-500">{marketStats.bets24h || 0}</p>
+                          <p className={`text-xs ${mutedClass}`}>Bets</p>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className={mutedClass}>Total Bets Placed:</span>
-                        <span className={`font-bold ${textClass}`}>{marketStats.totalBetsPlaced.toLocaleString()}</span>
+                      <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                        <div className="flex justify-between">
+                          <span className={mutedClass}>Buys:</span>
+                          <span className="text-green-500 font-semibold">{marketStats.buys24h || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className={mutedClass}>Sells:</span>
+                          <span className="text-red-400 font-semibold">{marketStats.sells24h || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className={mutedClass}>Shorts:</span>
+                          <span className="text-orange-500 font-semibold">{marketStats.shorts24h || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top Traded 24h */}
+                    {marketStats.topTraded24h && marketStats.topTraded24h.length > 0 && (
+                      <div className="mb-3">
+                        <h4 className={`text-xs font-semibold uppercase ${mutedClass} mb-2`}>Most Traded (24h)</h4>
+                        <div className="space-y-1">
+                          {marketStats.topTraded24h.map((item, i) => (
+                            <div key={item.ticker} className="flex justify-between text-sm">
+                              <span className={textClass}>${item.ticker}</span>
+                              <span className="font-bold text-cyan-500">${item.volume.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* All Time */}
+                    <div className={`pt-3 border-t ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <h4 className={`text-xs font-semibold uppercase ${mutedClass} mb-2`}>All Time</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className={mutedClass}>Total Trades:</span>
+                          <span className={`font-bold ${textClass}`}>{marketStats.totalTradesAllTime.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className={mutedClass}>Total Bets:</span>
+                          <span className={`font-bold ${textClass}`}>{marketStats.totalBetsPlaced.toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
