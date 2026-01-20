@@ -4965,15 +4965,24 @@ export default function App() {
     const userRef = doc(db, 'users', user.uid);
     const currentFavorites = userData?.favorites || [];
     const isFavorite = currentFavorites.includes(ticker);
-    
-    if (isFavorite) {
-      await updateDoc(userRef, {
-        favorites: currentFavorites.filter(t => t !== ticker)
+
+    try {
+      if (isFavorite) {
+        await updateDoc(userRef, {
+          favorites: currentFavorites.filter(t => t !== ticker)
+        });
+      } else {
+        await updateDoc(userRef, {
+          favorites: arrayUnion(ticker)
+        });
+      }
+    } catch (error) {
+      console.error('Error updating favorites:', error);
+      setNotification({
+        type: 'error',
+        message: 'Failed to update favorites. Please try again.'
       });
-    } else {
-      await updateDoc(userRef, {
-        favorites: arrayUnion(ticker)
-      });
+      setTimeout(() => setNotification(null), 3000);
     }
   }, [user, userData]);
 
@@ -6193,7 +6202,13 @@ export default function App() {
         const priceValues = recentHistory.map(h => h.price);
         const mean = priceValues.reduce((a, b) => a + b, 0) / priceValues.length;
         const variance = priceValues.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / priceValues.length;
-        volatilities[c.ticker] = Math.sqrt(variance) / mean; // Coefficient of variation
+        // Coefficient of variation: guard against division by zero or non-finite mean
+        if (mean > 0 && Number.isFinite(mean)) {
+          const coeffOfVariation = Math.sqrt(variance) / mean;
+          volatilities[c.ticker] = Number.isFinite(coeffOfVariation) ? coeffOfVariation : 0;
+        } else {
+          volatilities[c.ticker] = 0;
+        }
       } else {
         volatilities[c.ticker] = c.volatility || 0;
       }
@@ -6567,9 +6582,9 @@ export default function App() {
               <option value="ticker">Ticker A-Z</option>
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
-              {marketFilter === 'gainers' && <option value="gainers">Biggest Gainers</option>}
-              {marketFilter === 'losers' && <option value="losers">Biggest Losers</option>}
-              {marketFilter === 'volatile' && <option value="volatile">Most Volatile</option>}
+              <option value="gainers" disabled={marketFilter !== 'gainers'}>Biggest Gainers</option>
+              <option value="losers" disabled={marketFilter !== 'losers'}>Biggest Losers</option>
+              <option value="volatile" disabled={marketFilter !== 'volatile'}>Most Volatile</option>
             </select>
             <input type="text" placeholder="Search..." value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
