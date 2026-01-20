@@ -53,6 +53,12 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
+  
+  // IPO state
+  const [ipoTicker, setIpoTicker] = useState('');
+  const [ipoHoursUntilStart, setIpoHoursUntilStart] = useState(24); // Hours until IPO buying starts (hype phase)
+  const [ipoDurationHours, setIpoDurationHours] = useState(24); // How long IPO buying lasts
+  const [activeIPOs, setActiveIPOs] = useState([]);
 
   const isAdmin = user && ADMIN_UIDS.includes(user.uid);
 
@@ -210,6 +216,103 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
     } catch (err) {
       console.error(err);
       showMessage('error', 'Failed to create prediction');
+    }
+    setLoading(false);
+  };
+
+  // Load active IPOs
+  const loadIPOs = async () => {
+    try {
+      const ipoRef = doc(db, 'market', 'ipos');
+      const snap = await getDoc(ipoRef);
+      if (snap.exists()) {
+        setActiveIPOs(snap.data().list || []);
+      } else {
+        setActiveIPOs([]);
+      }
+    } catch (err) {
+      console.error('Failed to load IPOs:', err);
+    }
+  };
+
+  // Create new IPO
+  const handleCreateIPO = async () => {
+    if (!ipoTicker) {
+      showMessage('error', 'Please select a character');
+      return;
+    }
+
+    const character = CHARACTERS.find(c => c.ticker === ipoTicker);
+    if (!character) {
+      showMessage('error', 'Character not found');
+      return;
+    }
+
+    // Check if IPO already exists for this ticker
+    const existingIPO = activeIPOs.find(ipo => ipo.ticker === ipoTicker && !ipo.priceJumped);
+    if (existingIPO) {
+      showMessage('error', 'An IPO already exists for this character');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const ipoRef = doc(db, 'market', 'ipos');
+      const snap = await getDoc(ipoRef);
+      const currentList = snap.exists() ? (snap.data().list || []) : [];
+
+      const now = Date.now();
+      const ipoStartsAt = now + (ipoHoursUntilStart * 60 * 60 * 1000);
+      const ipoEndsAt = ipoStartsAt + (ipoDurationHours * 60 * 60 * 1000);
+
+      const newIPO = {
+        ticker: ipoTicker,
+        basePrice: character.basePrice,
+        ipoStartsAt,
+        ipoEndsAt,
+        sharesRemaining: 150,
+        priceJumped: false,
+        createdAt: now
+      };
+
+      if (snap.exists()) {
+        await updateDoc(ipoRef, {
+          list: [...currentList, newIPO]
+        });
+      } else {
+        await setDoc(ipoRef, {
+          list: [newIPO]
+        });
+      }
+
+      showMessage('success', `🚀 IPO created for $${ipoTicker}! Hype phase starts now, buying in ${ipoHoursUntilStart}h`);
+      setIpoTicker('');
+      loadIPOs();
+    } catch (err) {
+      console.error(err);
+      showMessage('error', 'Failed to create IPO');
+    }
+    setLoading(false);
+  };
+
+  // Cancel/Delete IPO
+  const handleCancelIPO = async (ticker) => {
+    if (!window.confirm(`Cancel IPO for $${ticker}? This cannot be undone.`)) return;
+    
+    setLoading(true);
+    try {
+      const ipoRef = doc(db, 'market', 'ipos');
+      const snap = await getDoc(ipoRef);
+      if (snap.exists()) {
+        const currentList = snap.data().list || [];
+        const updatedList = currentList.filter(ipo => ipo.ticker !== ticker);
+        await updateDoc(ipoRef, { list: updatedList });
+        showMessage('success', `Cancelled IPO for $${ticker}`);
+        loadIPOs();
+      }
+    } catch (err) {
+      console.error(err);
+      showMessage('error', 'Failed to cancel IPO');
     }
     setLoading(false);
   };
@@ -546,6 +649,12 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
             💰 Prices
           </button>
           <button
+            onClick={() => { setActiveTab('ipo'); loadIPOs(); }}
+            className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'ipo' ? 'text-orange-500 border-b-2 border-orange-500' : mutedClass}`}
+          >
+            🚀 IPO
+          </button>
+          <button
             onClick={() => setActiveTab('create')}
             className={`flex-1 py-3 text-sm font-semibold whitespace-nowrap px-2 ${activeTab === 'create' ? 'text-teal-500 border-b-2 border-teal-500' : mutedClass}`}
           >
@@ -701,6 +810,163 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                     {loading ? 'Updating...' : '💰 Apply Price Change'}
                   </button>
                 </>
+              )}
+            </div>
+          )}
+
+          {/* IPO TAB */}
+          {activeTab === 'ipo' && (
+            <div className="space-y-4">
+              <div className={`p-3 rounded-sm ${darkMode ? 'bg-slate-700/50' : 'bg-orange-50'}`}>
+                <p className={`text-sm ${mutedClass}`}>
+                  🚀 <strong>IPO System:</strong> Create limited-time offerings for new characters.
+                  <br />• Hype Phase (24h default): Announcement only, no buying
+                  <br />• IPO Window (24h default): 150 shares available, max 10 per user
+                  <br />• After IPO: Price jumps 30%, normal trading begins
+                </p>
+              </div>
+
+              {/* Create IPO Form */}
+              <div className={`p-4 rounded-sm border ${darkMode ? 'border-slate-600' : 'border-slate-200'}`}>
+                <h3 className={`font-semibold ${textClass} mb-3`}>Create New IPO</h3>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>Character</label>
+                    <select
+                      value={ipoTicker}
+                      onChange={e => setIpoTicker(e.target.value)}
+                      className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
+                    >
+                      <option value="">Select character...</option>
+                      {CHARACTERS.map(c => (
+                        <option key={c.ticker} value={c.ticker}>
+                          ${c.ticker} - {c.name} (Base: ${c.basePrice})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>Hype Phase (hours)</label>
+                      <input
+                        type="number"
+                        value={ipoHoursUntilStart}
+                        onChange={e => setIpoHoursUntilStart(Math.max(0, parseInt(e.target.value) || 0))}
+                        min="0"
+                        className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
+                      />
+                      <p className={`text-xs ${mutedClass} mt-1`}>0 = IPO starts immediately</p>
+                    </div>
+                    <div>
+                      <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>IPO Duration (hours)</label>
+                      <input
+                        type="number"
+                        value={ipoDurationHours}
+                        onChange={e => setIpoDurationHours(Math.max(1, parseInt(e.target.value) || 24))}
+                        min="1"
+                        className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
+                      />
+                    </div>
+                  </div>
+                  
+                  {ipoTicker && (
+                    <div className={`p-3 rounded-sm ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                      <p className={`text-sm ${textClass}`}>
+                        <strong>${ipoTicker}</strong> IPO will:
+                      </p>
+                      <ul className={`text-xs ${mutedClass} mt-1 space-y-1`}>
+                        <li>• Hype phase: {ipoHoursUntilStart}h (announcement)</li>
+                        <li>• IPO buying: {ipoDurationHours}h</li>
+                        <li>• 150 shares at ${CHARACTERS.find(c => c.ticker === ipoTicker)?.basePrice}</li>
+                        <li>• After IPO: +30% price jump</li>
+                      </ul>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={handleCreateIPO}
+                    disabled={loading || !ipoTicker}
+                    className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-sm disabled:opacity-50"
+                  >
+                    {loading ? 'Creating...' : '🚀 Create IPO'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Active IPOs */}
+              <div>
+                <h3 className={`font-semibold ${textClass} mb-3`}>Active IPOs ({activeIPOs.filter(i => !i.priceJumped).length})</h3>
+                
+                {activeIPOs.filter(i => !i.priceJumped).length === 0 ? (
+                  <p className={`text-sm ${mutedClass}`}>No active IPOs</p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeIPOs.filter(i => !i.priceJumped).map(ipo => {
+                      const character = CHARACTERS.find(c => c.ticker === ipo.ticker);
+                      const now = Date.now();
+                      const inHypePhase = now < ipo.ipoStartsAt;
+                      const inBuyingPhase = now >= ipo.ipoStartsAt && now < ipo.ipoEndsAt;
+                      const timeUntilStart = ipo.ipoStartsAt - now;
+                      const timeUntilEnd = ipo.ipoEndsAt - now;
+                      
+                      const formatTime = (ms) => {
+                        if (ms <= 0) return 'Now';
+                        const hours = Math.floor(ms / (1000 * 60 * 60));
+                        const mins = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+                        return `${hours}h ${mins}m`;
+                      };
+                      
+                      return (
+                        <div key={ipo.ticker} className={`p-3 rounded-sm border ${
+                          inBuyingPhase ? 'border-green-500 bg-green-900/20' : 
+                          inHypePhase ? 'border-orange-500 bg-orange-900/20' : 
+                          'border-slate-600'
+                        }`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className={`font-bold ${textClass}`}>${ipo.ticker}</span>
+                              <span className={`text-sm ${mutedClass} ml-2`}>{character?.name}</span>
+                              <div className={`text-xs mt-1 ${
+                                inBuyingPhase ? 'text-green-400' : 
+                                inHypePhase ? 'text-orange-400' : mutedClass
+                              }`}>
+                                {inHypePhase ? `🔥 Hype Phase - IPO starts in ${formatTime(timeUntilStart)}` :
+                                 inBuyingPhase ? `📈 LIVE - ${ipo.sharesRemaining || 150}/150 left - Ends in ${formatTime(timeUntilEnd)}` :
+                                 '✓ Completed'}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleCancelIPO(ipo.ticker)}
+                              disabled={loading}
+                              className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-sm disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Past IPOs */}
+              {activeIPOs.filter(i => i.priceJumped).length > 0 && (
+                <div>
+                  <h3 className={`font-semibold ${textClass} mb-3`}>Completed IPOs</h3>
+                  <div className="space-y-1">
+                    {activeIPOs.filter(i => i.priceJumped).slice(-5).map(ipo => (
+                      <div key={ipo.ticker} className={`p-2 rounded-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-100'}`}>
+                        <span className={`text-sm ${textClass}`}>${ipo.ticker}</span>
+                        <span className={`text-xs ${mutedClass} ml-2`}>
+                          Sold {150 - (ipo.sharesRemaining || 0)} shares
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
