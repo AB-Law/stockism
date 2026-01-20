@@ -10,7 +10,7 @@ const ADMIN_UIDS = [
 ];
 
 const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
-  const [activeTab, setActiveTab] = useState('create');
+  const [activeTab, setActiveTab] = useState('users');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   
@@ -1870,8 +1870,10 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                       const user = allUsers.find(u => u.id === userId);
                       if (!user) continue;
                       totalCash += user.cash || 0;
-                      if (user.holdings) {
+                      if (user.holdings && Object.keys(user.holdings).length > 0) {
+                        console.log(`User ${user.displayName} holdings:`, user.holdings);
                         Object.entries(user.holdings).forEach(([ticker, shares]) => {
+                          console.log(`  ${ticker}:`, shares, typeof shares);
                           // holdings can be a number or an object with shares property
                           const shareCount = typeof shares === 'number' ? shares : (shares?.shares || 0);
                           if (shareCount > 0) {
@@ -1880,10 +1882,13 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                             const character = CHARACTERS.find(c => c.ticker === ticker);
                             const price = prices[ticker] || character?.basePrice || 0;
                             totalValue += shareCount * price;
+                            console.log(`  -> ${shareCount} shares @ $${price} = $${shareCount * price}`);
                           }
                         });
                       }
                     }
+                    
+                    console.log(`Total: ${totalShares} shares, $${totalValue} value, $${totalCash} cash`);
                     
                     return (
                       <div className={`mt-2 pt-2 border-t ${darkMode ? 'border-red-800' : 'border-red-300'} grid grid-cols-3 gap-2 text-xs`}>
