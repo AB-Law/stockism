@@ -270,8 +270,20 @@ const getTodayDateString = () => {
 };
 
 // Check if user qualifies for margin trading (requires commitment + skill)
-const checkMarginEligibility = (userData) => {
+const checkMarginEligibility = (userData, isAdmin = false) => {
   if (!userData) return { eligible: false, requirements: [] };
+  
+  // Admin bypass - always eligible
+  if (isAdmin) {
+    return {
+      eligible: true,
+      requirements: [
+        { met: true, label: '10+ daily check-ins', current: '∞', required: 10 },
+        { met: true, label: '35+ total trades', current: '∞', required: 35 },
+        { met: true, label: '$7,500+ peak portfolio', current: '∞', required: 7500 }
+      ]
+    };
+  }
   
   const totalCheckins = userData.totalCheckins || 0;
   const totalTrades = userData.totalTrades || 0;
@@ -3365,7 +3377,7 @@ const AchievementsModal = ({ onClose, darkMode, userData }) => {
 // MARGIN MODAL
 // ============================================
 
-const MarginModal = ({ onClose, darkMode, userData, prices, onEnableMargin, onDisableMargin, onRepayMargin }) => {
+const MarginModal = ({ onClose, darkMode, userData, prices, onEnableMargin, onDisableMargin, onRepayMargin, isAdmin }) => {
   const [repayAmount, setRepayAmount] = useState(0);
   const [showConfirmEnable, setShowConfirmEnable] = useState(false);
   
@@ -3373,7 +3385,7 @@ const MarginModal = ({ onClose, darkMode, userData, prices, onEnableMargin, onDi
   const textClass = darkMode ? 'text-zinc-100' : 'text-slate-900';
   const mutedClass = darkMode ? 'text-zinc-400' : 'text-zinc-600';
   
-  const eligibility = checkMarginEligibility(userData);
+  const eligibility = checkMarginEligibility(userData, isAdmin);
   const marginStatus = calculateMarginStatus(userData, prices);
   
   const getStatusColor = (status) => {
@@ -5862,7 +5874,8 @@ export default function App() {
   const handleEnableMargin = useCallback(async () => {
     if (!user || !userData) return;
     
-    const eligibility = checkMarginEligibility(userData);
+    const isAdmin = ADMIN_UIDS.includes(user.uid);
+    const eligibility = checkMarginEligibility(userData, isAdmin);
     if (!eligibility.eligible) {
       setNotification({ type: 'error', message: 'Not eligible for margin trading!' });
       setTimeout(() => setNotification(null), 3000);
@@ -6392,6 +6405,7 @@ export default function App() {
           onEnableMargin={handleEnableMargin}
           onDisableMargin={handleDisableMargin}
           onRepayMargin={handleRepayMargin}
+          isAdmin={user && ADMIN_UIDS.includes(user.uid)}
         />
       )}
       {showCrewSelection && !isGuest && (
