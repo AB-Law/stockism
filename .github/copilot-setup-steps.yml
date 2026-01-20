@@ -1,0 +1,24 @@
+name: Stockism Setup Steps
+description: Setup instructions for the Stockism application
+
+steps:
+  - step: Install Prerequisites
+    description: Ensure Node.js 18 or higher is installed
+    command: node --version
+
+  - step: Clone Repository
+    description: Clone the stockism repository
+    command: git clone https://github.com/AB-Law/stockism.git
+
+  - step: Navigate to Project
+    description: Change to the project directory
+    command: cd stockism
+
+  - step: Install Dependencies
+    description: Install all npm dependencies
+    command: npm install
+
+  - step: Start Development Server
+    description: Run the Vite development server
+    command: npm run dev
+
