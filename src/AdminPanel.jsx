@@ -655,13 +655,14 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
       
       // Sum up holdings
       if (user.holdings) {
-        Object.entries(user.holdings).forEach(([ticker, data]) => {
-          const shares = data.shares || 0;
-          if (shares > 0) {
-            totalShares += shares;
-            holdingsSummary[ticker] = (holdingsSummary[ticker] || 0) + shares;
+        Object.entries(user.holdings).forEach(([ticker, shares]) => {
+          // holdings can be a number or an object with shares property
+          const shareCount = typeof shares === 'number' ? shares : (shares?.shares || 0);
+          if (shareCount > 0) {
+            totalShares += shareCount;
+            holdingsSummary[ticker] = (holdingsSummary[ticker] || 0) + shareCount;
             const price = prices[ticker] || 0;
-            totalValue += shares * price;
+            totalValue += shareCount * price;
           }
         });
       }
@@ -1838,12 +1839,13 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                       if (!user) continue;
                       totalCash += user.cash || 0;
                       if (user.holdings) {
-                        Object.entries(user.holdings).forEach(([ticker, data]) => {
-                          const shares = data.shares || 0;
-                          if (shares > 0) {
-                            totalShares += shares;
+                        Object.entries(user.holdings).forEach(([ticker, shares]) => {
+                          // holdings can be a number or an object with shares property
+                          const shareCount = typeof shares === 'number' ? shares : (shares?.shares || 0);
+                          if (shareCount > 0) {
+                            totalShares += shareCount;
                             const price = prices[ticker] || 0;
-                            totalValue += shares * price;
+                            totalValue += shareCount * price;
                           }
                         });
                       }
@@ -1910,12 +1912,16 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                     <div className="mb-4">
                       <h4 className={`text-xs font-semibold uppercase ${mutedClass} mb-2`}>Holdings</h4>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {Object.entries(selectedUser.holdings).map(([ticker, data]) => (
-                          <div key={ticker} className={`text-sm flex justify-between ${textClass}`}>
-                            <span>{ticker}</span>
-                            <span>{data.shares} @ ${data.avgCost?.toFixed(2) || '?'}</span>
-                          </div>
-                        ))}
+                        {Object.entries(selectedUser.holdings).map(([ticker, shares]) => {
+                          const shareCount = typeof shares === 'number' ? shares : (shares?.shares || 0);
+                          if (shareCount <= 0) return null;
+                          return (
+                            <div key={ticker} className={`text-sm flex justify-between ${textClass}`}>
+                              <span>{ticker}</span>
+                              <span>{shareCount} shares</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
