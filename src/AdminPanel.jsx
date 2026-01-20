@@ -16,7 +16,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
   
   // Create prediction form state
   const [question, setQuestion] = useState('');
-  const [options, setOptions] = useState(['', '', '', '']);
+  const [options, setOptions] = useState(['', '', '', '', '', '']);
   const [daysUntilEnd, setDaysUntilEnd] = useState(7);
   
   // Calculate end time at 8:55 AM CST on target day
@@ -246,7 +246,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
 
       showMessage('success', `Created prediction: "${question.trim()}"`);
       setQuestion('');
-      setOptions(['', '', '', '']);
+      setOptions(['', '', '', '', '', '']);
       setDaysUntilEnd(7);
     } catch (err) {
       console.error(err);
@@ -836,6 +836,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
       for (const userDoc of snapshot.docs) {
         const userData = userDoc.data();
         const holdings = userData.holdings || {};
+        const shorts = userData.shorts || {};
         const cash = userData.cash || 0;
         
         // Calculate holdings value
@@ -845,12 +846,23 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
           // Support both formats: { shares: 5 } or just 5
           const shares = typeof holdingData === 'number' ? holdingData : (holdingData.shares || 0);
           holdingsValue += currentPrice * shares;
-          console.log(`${userData.displayName}: ${ticker} = ${shares} shares @ $${currentPrice} = $${currentPrice * shares}`);
         }
         
-        const newPortfolioValue = Math.round((cash + holdingsValue) * 100) / 100;
+        // Calculate shorts value (collateral + P&L)
+        let shortsValue = 0;
+        for (const [ticker, position] of Object.entries(shorts)) {
+          if (!position || position.shares <= 0) continue;
+          const currentPrice = prices[ticker] || position.entryPrice;
+          const collateral = position.margin || 0;
+          // P&L = (entry price - current price) * shares (profit when price goes down)
+          const pnl = (position.entryPrice - currentPrice) * position.shares;
+          shortsValue += collateral + pnl;
+          console.log(`${userData.displayName}: SHORT ${ticker} = ${position.shares} shares, entry $${position.entryPrice}, current $${currentPrice}, collateral $${collateral}, pnl $${pnl}`);
+        }
         
-        console.log(`${userData.displayName}: cash=$${cash} + holdings=$${holdingsValue} = $${newPortfolioValue} (was $${userData.portfolioValue})`);
+        const newPortfolioValue = Math.round((cash + holdingsValue + shortsValue) * 100) / 100;
+        
+        console.log(`${userData.displayName}: cash=$${cash} + holdings=$${holdingsValue} + shorts=$${shortsValue} = $${newPortfolioValue} (was $${userData.portfolioValue})`);
         
         // Only update if different
         if (Math.abs(newPortfolioValue - (userData.portfolioValue || 0)) > 0.01) {
@@ -1416,7 +1428,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
               </div>
 
               <div>
-                <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>Options (2-4)</label>
+                <label className={`block text-xs font-semibold uppercase mb-1 ${mutedClass}`}>Options (2-6)</label>
                 <div className="space-y-2">
                   {options.map((opt, idx) => (
                     <input
@@ -1428,7 +1440,7 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                         newOpts[idx] = e.target.value;
                         setOptions(newOpts);
                       }}
-                      placeholder={idx < 2 ? '(required)' : '(optional)'}
+                      placeholder={idx < 2 ? `Option ${idx + 1} (required)` : `Option ${idx + 1} (optional)`}
                       className={`w-full px-3 py-2 border rounded-sm ${inputClass}`}
                     />
                   ))}
