@@ -661,7 +661,9 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
           if (shareCount > 0) {
             totalShares += shareCount;
             holdingsSummary[ticker] = (holdingsSummary[ticker] || 0) + shareCount;
-            const price = prices[ticker] || 0;
+            // Use market price, or fall back to base price from characters
+            const character = CHARACTERS.find(c => c.ticker === ticker);
+            const price = prices[ticker] || character?.basePrice || 0;
             totalValue += shareCount * price;
           }
         });
@@ -1874,7 +1876,9 @@ const AdminPanel = ({ user, predictions, prices, darkMode, onClose }) => {
                           const shareCount = typeof shares === 'number' ? shares : (shares?.shares || 0);
                           if (shareCount > 0) {
                             totalShares += shareCount;
-                            const price = prices[ticker] || 0;
+                            // Use market price, or fall back to base price from characters
+                            const character = CHARACTERS.find(c => c.ticker === ticker);
+                            const price = prices[ticker] || character?.basePrice || 0;
                             totalValue += shareCount * price;
                           }
                         });
