@@ -4700,6 +4700,32 @@ export default function App() {
       return;
     }
     
+    // Check if character is in IPO phase (not tradeable normally)
+    const now = Date.now();
+    const activeIPO = activeIPOs.find(ipo => ipo.ticker === ticker && !ipo.priceJumped && now < ipo.ipoEndsAt);
+    if (activeIPO) {
+      const inHypePhase = now < activeIPO.ipoStartsAt;
+      setNotification({ 
+        type: 'error', 
+        message: inHypePhase 
+          ? `$${ticker} is in IPO hype phase - trading opens soon!` 
+          : `$${ticker} is in IPO - buy through the IPO section above!`
+      });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    
+    // Check if character requires IPO but hasn't had one
+    const character = CHARACTER_MAP[ticker];
+    if (character?.ipoRequired) {
+      const completedIPO = activeIPOs.find(ipo => ipo.ticker === ticker && ipo.priceJumped);
+      if (!completedIPO) {
+        setNotification({ type: 'error', message: `$${ticker} requires an IPO before trading` });
+        setTimeout(() => setNotification(null), 3000);
+        return;
+      }
+    }
+    
     const asset = CHARACTER_MAP[ticker];
     const price = prices[ticker] || asset?.basePrice || 0;
     
@@ -4716,7 +4742,7 @@ export default function App() {
     }
     
     setTradeConfirmation({ ticker, action, amount, price, total, name: asset?.name });
-  }, [user, userData, prices]);
+  }, [user, userData, prices, activeIPOs]);
 
   // Handle trade (executes after confirmation)
   const handleTrade = useCallback(async (ticker, action, amount) => {
@@ -5604,12 +5630,34 @@ export default function App() {
     return price24hAgo > 0 ? ((currentPrice - price24hAgo) / price24hAgo) * 100 : 0;
   }, [prices, priceHistory]);
 
+  // Get list of tickers currently in IPO (hype or active phase) - these shouldn't be tradeable
+  const ipoRestrictedTickers = useMemo(() => {
+    const now = Date.now();
+    return activeIPOs
+      .filter(ipo => !ipo.priceJumped && now < ipo.ipoEndsAt) // In hype or buying phase
+      .map(ipo => ipo.ticker);
+  }, [activeIPOs]);
+
   // Filter and sort
   const filteredCharacters = useMemo(() => {
-    let filtered = CHARACTERS.filter(c =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.ticker.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    let filtered = CHARACTERS.filter(c => {
+      // Search filter
+      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.ticker.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+      
+      // Hide characters that require IPO and haven't completed one yet
+      if (c.ipoRequired) {
+        // Check if this character has a completed IPO (priceJumped = true)
+        const completedIPO = activeIPOs.find(ipo => ipo.ticker === c.ticker && ipo.priceJumped);
+        if (!completedIPO) return false; // IPO required but not completed - hide from trading
+      }
+      
+      // Also hide characters currently in IPO phase (shouldn't happen with above, but safety check)
+      if (ipoRestrictedTickers.includes(c.ticker)) return false;
+      
+      return true;
+    });
 
     // Calculate 24h price changes from actual history
     const priceChanges = {};
@@ -5665,7 +5713,7 @@ export default function App() {
       case 'oldest': filtered.sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded)); break;
     }
     return filtered;
-  }, [searchQuery, sortBy, prices, priceHistory, get24hChange]);
+  }, [searchQuery, sortBy, prices, priceHistory, get24hChange, activeIPOs, ipoRestrictedTickers]);
 
   const totalPages = Math.ceil(filteredCharacters.length / ITEMS_PER_PAGE);
   const displayedCharacters = showAll ? filteredCharacters : filteredCharacters.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
